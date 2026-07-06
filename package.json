@@ -1,0 +1,38 @@
+{
+  "name": "@obh/forge",
+  "version": "0.1.0",
+  "private": false,
+  "description": "OBH Forge — deterministic scaffolding and delivery tooling for OBH software projects.",
+  "license": "MIT",
+  "packageManager": "pnpm@9.7.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "commonjs",
+  "bin": {
+    "forge": "dist/cli.js",
+    "obh-forge": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "picocolors": "^1.0.1",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/prompts": "^2.4.9",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
