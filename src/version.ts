@@ -1,2 +1,2 @@
 // Single source of truth for the Forge version stamped into forge.json.
-export const FORGE_VERSION = "0.1.0"
+export const FORGE_VERSION = "0.2.0"
