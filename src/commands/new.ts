@@ -1,5 +1,5 @@
 import path from "node:path"
-import type { ApiFramework, AppRecord, CapabilityName, ExampleDomain, ForgeManifest, PackageRecord, RecipeName } from "../types"
+import type { ApiFramework, AppRecord, CapabilityName, ExampleDomain, ForgeManifest, PackageRecord, RecipeName, Topology } from "../types"
 import { Plan } from "../project/plan"
 import { ProjectContext } from "../project/context"
 import { newManifest } from "../project/manifest"
@@ -125,7 +125,7 @@ async function resolveAnswers(name: string | undefined, opts: NewOptions): Promi
       name,
       scope: opts.scope ?? `@${name}`,
       recipe: (opts.recipe as RecipeName) ?? "api-web-worker",
-      topology: (opts.topology as "small" | "split") ?? "small",
+      topology: (opts.topology as Topology) ?? "compose",
       apiFramework: apiFramework ?? "hono",
       example: opts.example === false ? null : "notes",
       sdk,
@@ -138,7 +138,7 @@ async function resolveAnswers(name: string | undefined, opts: NewOptions): Promi
     name,
     scope: opts.scope,
     recipe: opts.recipe as RecipeName | undefined,
-    topology: opts.topology as "small" | "split" | undefined,
+    topology: opts.topology as Topology | undefined,
     apiFramework,
     example: forcedExample,
     sdk,

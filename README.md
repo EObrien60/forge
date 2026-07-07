@@ -28,7 +28,7 @@ pnpm install && pnpm build && node dist/cli.js --help
 
 | Command | What it does |
 |---|---|
-| `forge new app <name>` | Scaffold a new project. Recipes: `full-saas`, `api-web-worker`, `api-only`, `worker`. Flags: `--api-framework hono\|express`, `--no-example`, `--no-sdk`, `--mobile [name]`, `--topology small\|split`, `--repo owner/repo`, `--scope`. |
+| `forge new app <name>` | Scaffold a new project. Recipes: `full-saas`, `api-web-worker`, `api-only`, `worker`. Flags: `--api-framework hono\|express`, `--no-example`, `--no-sdk`, `--mobile [name]`, `--topology compose\|small\|split`, `--repo owner/repo`, `--scope`. |
 | `forge new package <name>` | Scaffold an OBH platform-primitive repo (the qtool template: `@obh/<name>`, kernel helpers, record-store client, migrations, CI). `--daemon` adds an admin/worker app. |
 | `forge add <target>` | Add an app (`api`/`web`/`worker`/`sdk`/`mobile`) or a primitive — `events`, `jobs`, `files`, `audit`, `settings`, `api-keys`, `webhooks`, `import-export`, `entitlements`, `search`, `analytics`, `notifications`. Prerequisites resolve automatically. |
 | `forge inspect` | Report project shape and detected conventions. |
@@ -55,14 +55,22 @@ forge stack status         # rolled-up lwd status across the stack
 forge stack rm             # tear down in reverse order (named data volumes preserved)
 ```
 
+**Default topology is `compose`:** `forge new` bundles **db + api + worker into
+one lwd compose app** (shared docker network → the worker reaches Postgres), with
+the admin as a separate static app. So `forge deploy` brings the **whole stack up
+with one command** and there are no cross-app connectivity gaps. Tradeoff: a
+compose app is pinned to one node (no lwd blue-green / per-app replicas for those
+services) — `--topology split` emits separate lwd apps for when lwd gains
+cross-app networking.
+
 `deploy` **generates** the random secrets (`POSTGRES_PASSWORD`, `JWT_SECRET`,
 `API_KEYS_PEPPER`), **derives** connection strings (`DATABASE_URL` from the
-Postgres backing service), **orders** the multi-app apply, and is **idempotent**
-(lwd is the sole secret store — already-set secrets are skipped, never rotated
-silently; `--dry-run` masks all values). It **honestly flags** lwd's per-app
-network isolation: a worker that can't reach a Postgres co-located in the API is
-reported (fix by moving to split topology), never wired with a broken value.
-`--rotate <KEY>` regenerates a secret and re-derives everything built from it.
+Postgres service), **orders** the multi-app apply, and is **idempotent** (lwd is
+the sole secret store — already-set secrets are skipped, never rotated silently;
+`--dry-run` masks all values). With `--topology split` it **honestly flags** lwd's
+per-app network isolation (a worker that can't reach a co-located Postgres),
+never wiring a broken value. `--rotate <KEY>` regenerates a secret and re-derives
+everything built from it.
 
 ## What you get from `forge new`
 

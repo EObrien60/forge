@@ -33,8 +33,16 @@ export interface ForgeConfig {
   }
 }
 
-/** lwd deployment topology (see §14 of the spec). */
-export type Topology = "small" | "split"
+/**
+ * lwd deployment topology.
+ * - `compose` (default): db + api + worker bundled as one lwd compose app on a
+ *   shared network (worker reaches the db); admin is a separate static app. One
+ *   command deploys the whole stack. Pinned to one node.
+ * - `small`: api co-locates a `[[services]]` Postgres; separate worker app (the
+ *   worker cannot reach the co-located db — kept for api-only / advanced use).
+ * - `split`: separate api / worker / db lwd apps (awaits lwd cross-app networking).
+ */
+export type Topology = "compose" | "small" | "split"
 
 /** The OBH platform primitives Forge can install. */
 export type CapabilityName =

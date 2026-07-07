@@ -72,8 +72,9 @@ export async function askNew(defaults: Partial<NewAnswers> & { sdk?: boolean }):
         name: "topology",
         message: "Deployment topology",
         choices: [
-          { title: "small — API co-locates Postgres (simplest)", value: "small" },
-          { title: "split — separate api / worker / db apps (scales)", value: "split" },
+          { title: "compose — one command deploys db+api+worker on a shared network (recommended)", value: "compose" },
+          { title: "small — API co-locates Postgres; worker can't reach it", value: "small" },
+          { title: "split — separate api / worker / db apps (awaits lwd cross-app networking)", value: "split" },
         ],
         initial: 0,
       },

@@ -73,6 +73,18 @@ export async function inferStack(root: string): Promise<StackManifest> {
     for (const svc of i.toml.services) {
       if (/^postgres/.test(svc.image)) pgSources.push(pgFromService(i.toml.name, svc))
     }
+    // Compose app that bundles its own Postgres (service "db"): reachable within
+    // the one app, so no cross-app flag.
+    if (i.toml.compose && i.toml.secrets.some((s) => /PASSWORD/.test(s))) {
+      pgSources.push({
+        ownerApp: i.toml.name,
+        host: "db",
+        user: i.toml.env.POSTGRES_USER ?? "app",
+        db: i.toml.env.POSTGRES_DB ?? "app",
+        coLocated: true,
+        passwordSecret: i.toml.secrets.find((s) => /PASSWORD/.test(s)) ?? "POSTGRES_PASSWORD",
+      })
+    }
     if (roleOf.get(i.toml.name) === "resource" && /^postgres/.test(i.toml.image ?? "")) {
       pgSources.push({
         ownerApp: i.toml.name,
@@ -154,6 +166,8 @@ function serviceNameOf(infos: AppInfo[], app: string): string | undefined {
 function inferRole(info: AppInfo, forgeRoles: Record<string, string>): AppRole {
   const fr = forgeRoles[info.base]
   if (fr === "api" || fr === "web" || fr === "worker") return fr
+  // A compose app is the fronted surface (bundles api+worker+db).
+  if (info.toml.compose) return "api"
   const t = info.toml
   const isResource = (t.services.length > 0 && !t.git && !t.image) || (RESOURCE_IMAGE_RE.test(t.image ?? "") && !t.git)
   if (isResource) return "resource"

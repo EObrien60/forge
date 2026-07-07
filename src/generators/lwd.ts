@@ -1,5 +1,6 @@
 import type { CapabilityName, ForgeManifest, Topology } from "../types"
 import type { Plan } from "../project/plan"
+import { addComposeDeployment } from "./compose"
 
 /** Base secret names every project needs, plus per-capability additions. */
 const CAPABILITY_SECRETS: Partial<Record<CapabilityName, string[]>> = {
@@ -35,6 +36,11 @@ export function addLwdManifests(plan: Plan, manifest: ForgeManifest): void {
   const includeAuth = true
   const secrets = computeSecrets(manifest, includeAuth)
   const gitUrl = repoUrl(manifest.deploy.repo, name)
+
+  if (topology === "compose") {
+    addComposeDeployment(plan, manifest, gitUrl)
+    return
+  }
 
   if (hasApi) {
     plan.create(`deploy/api.lwd.toml`, apiManifest(name, topology, secrets, gitUrl), "lwd manifest: API surface")
