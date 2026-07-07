@@ -11,79 +11,124 @@ export const search: Capability = {
 
     const notes = hasNotesExample(ctx)
     if (ctx.hasApp("api")) {
-      plan.create("apps/api/src/platform/search.ts", registryFile(notes), "search client + entities")
-      plan.create("apps/api/src/routes/search.ts", apiFramework(ctx) === "hono" ? ROUTE_HONO : ROUTE_EXPRESS, "search query route")
+      plan.create("apps/api/src/platform/search.ts", CLIENT, "search client + query provider")
+      plan.create(
+        "apps/api/src/routes/search.ts",
+        apiFramework(ctx) === "hono" ? ROUTE_HONO : ROUTE_EXPRESS,
+        "search query route",
+      )
     }
     if (ctx.hasWorker()) {
+      plan.create("apps/worker/src/search-entities.ts", entitiesFile(notes), "worker-side search entity definitions")
+      plan.create(
+        "apps/worker/src/dispatch.d/search.ts",
+        `export const consumer = { name: "search", events: ["*"] }\n`,
+        "register search as an event consumer",
+      )
       plan.create("apps/worker/src/consumers.d/search.ts", WORKER, "search indexer tick")
     }
 
     plan.patchManifest({ platform: { search: true } })
-    plan.nextStep("Run `pnpm migrate` (the @obh/search migration enables pg_trgm). Index is updated by the worker from events.")
+    plan.nextStep("Run `pnpm migrate` (the @obh/search migration enables pg_trgm). The worker keeps the index fresh from events; query at GET /api/search?q=.")
   },
 }
 
-function registryFile(notes: boolean): string {
-  const defs = notes
-    ? `// Declare a searchable entity and how its indexed document is shaped.
-export const noteEntity = defineSearchEntity({
-  type: "note",
-  fields: ["title", "body"],
-})
-
-const entities = [noteEntity]`
-    : `const entities: unknown[] = []`
-  return `// Adjust to the @obh/search version you install.
-// Requires the pg_trgm extension — the @obh/search migration enables it.
-import { createPostgresSearchProvider, createSearchClient, defineSearchEntity, pgAdapter } from "@obh/search"
+// The client only needs the query provider; entity mappers live worker-side.
+const CLIENT = `import { createPostgresSearchProvider, createSearchClient, pgAdapter } from "@obh/search"
 import { pool } from "../db"
 
-${defs}
-
+// Postgres full-text + trigram provider. pg_trgm is enabled by the migration.
 const provider = createPostgresSearchProvider({ db: pgAdapter(pool) })
-export const search = createSearchClient({ provider, entities })
+
+export const search = createSearchClient({ provider })
+`
+
+function entitiesFile(notes: boolean): string {
+  const defs = notes
+    ? `  defineSearchEntity({
+    type: "note",
+    events: ["note.created", "note.updated"],
+    deleteEvents: ["note.deleted"],
+    buildDocument: (_ctx, event) => {
+      const p = event.payload as { id: string; title?: string; body?: string }
+      return {
+        workspaceId: event.workspaceId,
+        entityType: "note",
+        entityId: p.id,
+        title: p.title ?? "",
+        content: p.body ?? "",
+      }
+    },
+    buildDeleteRef: (_ctx, event) => {
+      const p = event.payload as { id: string }
+      return { workspaceId: event.workspaceId, entityType: "note", entityId: p.id }
+    },
+  }),`
+    : `  // defineSearchEntity({
+  //   type: "thing",
+  //   events: ["thing.created", "thing.updated"],
+  //   deleteEvents: ["thing.deleted"],
+  //   buildDocument: (_ctx, event) => ({ workspaceId: event.workspaceId, entityType: "thing", entityId: String((event.payload as { id: string }).id), title: "…", content: "…" }),
+  //   buildDeleteRef: (_ctx, event) => ({ workspaceId: event.workspaceId, entityType: "thing", entityId: String((event.payload as { id: string }).id) }),
+  // }),`
+  return `import { defineSearchEntity, type SearchEntityDefinition } from "@obh/search"
+
+// Worker-side entity definitions: how domain events become search documents.
+// Kept here so the worker never imports across app boundaries.
+export const entities: SearchEntityDefinition[] = [
+${defs}
+]
 `
 }
 
 const ROUTE_HONO = `import type { Hono } from "hono"
 import { search } from "../platform/search"
+import { WORKSPACE } from "../platform/events"
 
 export function register(app: Hono): void {
-  app.get("/search", async (c) => {
+  app.get("/api/search", async (c) => {
     const q = c.req.query("q") ?? ""
-    return c.json(await search.query({ q, workspaceId: c.req.query("workspaceId") }))
+    return c.json(await search.query({ workspaceId: WORKSPACE, query: q }))
   })
 }
 `
 
 const ROUTE_EXPRESS = `import type { Express, Request, Response } from "express"
 import { search } from "../platform/search"
+import { WORKSPACE } from "../platform/events"
 
 export function register(app: Express): void {
-  app.get("/search", async (req: Request, res: Response) => {
-    res.json(await search.query({ q: (req.query.q as string) ?? "", workspaceId: req.query.workspaceId as string | undefined }))
+  app.get("/api/search", async (req: Request, res: Response) => {
+    const q = (req.query.q as string) ?? ""
+    res.json(await search.query({ workspaceId: WORKSPACE, query: q }))
   })
 }
 `
 
-const WORKER = `// Consumes note.* events and keeps the search index in sync (upsert/delete docs).
-import { createSearchWorker, pgAdapter } from "@obh/search"
+const WORKER = `// Claims the "search" event deliveries and keeps the index in sync. The search
+// worker exposes an events consumer (index on create/update, unindex on delete);
+// createConsumerRunner drives it against this consumer's deliveries.
+import { createConsumerRunner, pgAdapter } from "@obh/events"
+import { createPostgresSearchProvider, createSearchClient, createSearchWorker, pgAdapter as searchPgAdapter } from "@obh/search"
+import { entities } from "../search-entities"
 import type { WorkerContext } from "../context"
 
-let worker: ReturnType<typeof createSearchWorker>
+let runner: ReturnType<typeof createConsumerRunner>
 
 export function init(ctx: WorkerContext): void {
-  worker = createSearchWorker({
+  const provider = createPostgresSearchProvider({ db: searchPgAdapter(ctx.pool) })
+  const client = createSearchClient({ provider })
+  // deps are passed to mappers as ctx.db; the note mappers read straight from
+  // the event payload, so nothing product-specific is needed here.
+  const worker = createSearchWorker<unknown>({ client, entities, deps: undefined })
+  runner = createConsumerRunner({
     db: pgAdapter(ctx.pool),
-    index: {
-      "note.created": (p: { id: string; title: string; body: string }) => ({ type: "note", id: p.id, doc: p }),
-      "note.updated": (p: { id: string; title: string; body: string }) => ({ type: "note", id: p.id, doc: p }),
-      "note.deleted": (p: { id: string }) => ({ type: "note", id: p.id, delete: true }),
-    },
+    consumers: [worker.consumer],
+    instanceId: "worker",
   })
 }
 
 export async function tick(): Promise<void> {
-  await worker.tick()
+  await runner.tick()
 }
 `

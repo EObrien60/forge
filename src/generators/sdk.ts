@@ -23,7 +23,11 @@ export function addSdkPackage(plan: Plan, opts: SdkOptions): void {
         name: `${opts.scope}/sdk`,
         version: "0.1.0",
         private: true,
+        // ESM so Vite/Rollup can tree-shake the named exports (a CommonJS SDK
+        // breaks `vite build` in a consuming frontend).
+        type: "module",
         main: "dist/index.js",
+        module: "dist/index.js",
         types: "dist/index.d.ts",
         files: ["dist"],
         scripts: {
@@ -44,7 +48,14 @@ export function addSdkPackage(plan: Plan, opts: SdkOptions): void {
     JSON.stringify(
       {
         extends: "../../tsconfig.base.json",
-        compilerOptions: { rootDir: "src", outDir: "dist", lib: ["ES2022", "DOM"] },
+        compilerOptions: {
+          rootDir: "src",
+          outDir: "dist",
+          // Emit ESM (overrides the CommonJS base) so frontends bundle it cleanly.
+          module: "ESNext",
+          moduleResolution: "bundler",
+          lib: ["ES2022", "DOM"],
+        },
         include: ["src"],
         exclude: ["dist", "node_modules", "src/**/*.test.ts"],
       },

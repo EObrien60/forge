@@ -9,14 +9,17 @@ export const audit: Capability = {
     addPlatformPackage(plan, ctx, "audit", { worker: true })
     plan.create("scripts/migrations.d/audit.ts", migrationModule("audit"), "audit migrations wiring")
 
-    const rules = rulesFile(hasNotesExample(ctx))
+    const notes = hasNotesExample(ctx)
     if (ctx.hasWorker()) {
-      // Rules live in the worker so the consumer imports them without crossing
-      // app boundaries (which would break the worker's tsc rootDir).
-      plan.create("apps/worker/src/audit-rules.ts", rules, "audit rule definitions")
+      plan.create("apps/worker/src/audit-rules.ts", rulesFile(notes), "audit rule definitions")
+      plan.create(
+        "apps/worker/src/dispatch.d/audit.ts",
+        `export const consumer = { name: "audit", events: ["*"] }\n`,
+        "register audit as an event consumer",
+      )
       plan.create("apps/worker/src/consumers.d/audit.ts", WORKER, "audit event consumer tick")
     } else {
-      plan.create("apps/api/src/platform/audit-rules.ts", rules, "audit rules (add a worker to consume them)")
+      plan.create("apps/api/src/platform/audit-rules.ts", rulesFile(notes), "audit rules (add a worker to consume them)")
     }
 
     plan.patchManifest({ platform: { audit: true } })
@@ -29,22 +32,28 @@ function rulesFile(notes: boolean): string {
     ? `  defineAuditRule({
     event: "note.created",
     action: "note.created",
-    target: (p: { id: string }) => ({ type: "note", id: p.id }),
+    target: (e) => ({ type: "note", id: idOf(e) }),
+    summary: () => "created a note",
   }),
   defineAuditRule({
     event: "note.updated",
     action: "note.updated",
-    target: (p: { id: string }) => ({ type: "note", id: p.id }),
+    target: (e) => ({ type: "note", id: idOf(e) }),
+    summary: () => "updated a note",
   }),
   defineAuditRule({
     event: "note.deleted",
     action: "note.deleted",
-    target: (p: { id: string }) => ({ type: "note", id: p.id }),
+    target: (e) => ({ type: "note", id: idOf(e) }),
+    summary: () => "deleted a note",
   }),`
-    : `  // defineAuditRule({ event: "thing.created", action: "thing.created",
-  //   target: (p) => ({ type: "thing", id: p.id }) }),`
-  return `// Adjust to the @obh/audit version you install.
-import { createRuleSet, defineAuditRule } from "@obh/audit"
+    : `  // defineAuditRule({
+  //   event: "thing.created", action: "thing.created",
+  //   target: (e) => ({ type: "thing", id: idOf(e) }), summary: () => "created a thing",
+  // }),`
+  return `import { createRuleSet, defineAuditRule, type AuditEvent } from "@obh/audit"
+
+const idOf = (e: AuditEvent): string => String((e.payload as { id?: string }).id ?? "?")
 
 // Map domain events to immutable audit entries.
 export const auditRules = createRuleSet([
@@ -53,8 +62,7 @@ ${rules}
 `
 }
 
-const WORKER = `// Consumes events and records audit entries. Reads platform.event_deliveries
-// for the "audit" consumer (standalone Option B).
+const WORKER = `// Claims the "audit" deliveries and records immutable audit entries.
 import { createAuditWorker, pgAdapter } from "@obh/audit"
 import { auditRules } from "../audit-rules"
 import type { WorkerContext } from "../context"
@@ -62,7 +70,7 @@ import type { WorkerContext } from "../context"
 let worker: ReturnType<typeof createAuditWorker>
 
 export function init(ctx: WorkerContext): void {
-  worker = createAuditWorker({ db: pgAdapter(ctx.pool), rules: auditRules })
+  worker = createAuditWorker({ db: pgAdapter(ctx.pool), rules: auditRules, instanceId: "worker" })
 }
 
 export async function tick(): Promise<void> {

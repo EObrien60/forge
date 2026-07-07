@@ -6,80 +6,117 @@ export const jobs: Capability = {
   describe: "Postgres job queue + worker — background/scheduled commands, idempotent handlers",
   apply(ctx, plan) {
     addPlatformPackage(plan, ctx, "jobs", { api: true, worker: true })
+    // defineJob validates payloads with a zod schema on both the enqueue and run sides.
+    if (ctx.hasApp("api")) plan.addDependency("apps/api", "zod", "^3.23.8")
+    if (ctx.hasWorker()) plan.addDependency("apps/worker", "zod", "^3.23.8")
     plan.create("scripts/migrations.d/jobs.ts", migrationModule("jobs"), "jobs migrations wiring")
 
     const notes = hasNotesExample(ctx)
     if (ctx.hasApp("api")) {
-      plan.create("apps/api/src/platform/jobs.ts", registryFile(notes), "jobs registry + client")
+      plan.create("apps/api/src/platform/jobs.ts", apiClient(notes), "jobs client + registry")
       if (notes) {
-        // Enqueue a job whenever a note changes — inside the write transaction.
-        plan.create("apps/api/src/bus.d/jobs-index.ts", INDEX_ON_WRITE, "enqueue index_note on note writes")
+        // Enqueue a job whenever a note is created — inside the write transaction.
+        plan.create("apps/api/src/bus.d/jobs-index.ts", ENQUEUE, "enqueue a job on note.created")
       }
     }
     if (ctx.hasWorker()) {
-      plan.create("apps/worker/src/consumers.d/jobs.ts", worker(notes), "job worker tick")
+      plan.create("apps/worker/src/consumers.d/jobs.ts", worker(notes), "jobs worker (claims + runs jobs)")
     }
 
     plan.patchManifest({ platform: { jobs: true } })
-    plan.nextStep("Run `pnpm migrate`. Jobs enqueue in-tx and run in the worker.")
+    plan.nextStep("Run `pnpm migrate`. Enqueue with jobs.enqueue(tx, { name, workspaceId, payload }); the worker runs handlers.")
   },
 }
 
-function registryFile(notes: boolean): string {
-  const defs = notes
-    ? `// Commands are snake_case. Facts (events) are dot.notation.
-export const indexNote = defineJob({ command: "index_note" })
+interface JobExample {
+  name: string
+  export: string
+  schema: string
+  field: string
+}
 
-const registry = createJobRegistry()
-registry.register(indexNote)`
-    : `const registry = createJobRegistry()`
-  return `// Adjust to the @obh/jobs version you install.
-import { createJobClient, createJobRegistry, defineJob, pgAdapter } from "@obh/jobs"
-import { pool } from "../db"
+function jobExample(notes: boolean): JobExample {
+  return notes
+    ? { name: "send_welcome_email", export: "sendWelcomeEmail", schema: "z.object({ noteId: z.string() })", field: "note_id: payload.noteId" }
+    : { name: "example_job", export: "exampleJob", schema: "z.object({ id: z.string() })", field: "id: payload.id" }
+}
 
-${defs}
+function apiClient(notes: boolean): string {
+  const d = jobExample(notes)
+  return `import { createJobClient, createJobRegistry, defineJob, type JobDb, type JobDefinition } from "@obh/jobs"
+import { z } from "zod"
 
-export { registry }
-export const jobs = createJobClient({ db: pgAdapter(pool), registry })
+// Every platform row is scoped to a workspace. Single-tenant apps can leave this.
+export const WORKSPACE = process.env.WORKSPACE_ID ?? "default"
+
+// Jobs are commands (snake_case imperatives), not events. The handler runs in the
+// worker (apps/worker/src/consumers.d/jobs.ts); here the schema validates payloads
+// at enqueue time. Keep the name + schema in sync with the worker's copy.
+export const ${d.export} = defineJob({
+  name: "${d.name}",
+  version: 1,
+  schema: ${d.schema},
+  handler: async () => {
+    throw new Error("${d.name} runs in the worker, not the API")
+  },
+})
+
+export const registry = createJobRegistry([${d.export} as JobDefinition])
+
+export const jobs = createJobClient({ source: "app", registry })
+
+/** Adapt a raw pg transaction to the structural JobDb @obh/jobs expects. */
+export function asJobDb(tx: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> }): JobDb {
+  return { query: (sql: string, params?: unknown[]) => tx.query(sql, params) as never }
+}
 `
 }
 
-const INDEX_ON_WRITE = `import { onEmit } from "../bus"
-import { indexNote, jobs } from "../platform/jobs"
+const ENQUEUE = `import { onEmit } from "../bus"
+import { asJobDb, jobs, sendWelcomeEmail, WORKSPACE } from "../platform/jobs"
 
-// Enqueue on the same transaction as the note write, so the job is only queued
-// if the write commits. Handlers must be idempotent (at-least-once delivery).
+// Enqueue a job on the SAME transaction as the note write, so the job is durable
+// exactly when the note is (and never queued if the write rolls back). The
+// idempotency key makes a re-emit a no-op rather than a duplicate job.
 onEmit(async (tx, name, payload) => {
-  if (name === "note.created" || name === "note.updated") {
-    const note = payload as { id: string }
-    await jobs.enqueue(tx, indexNote, { noteId: note.id })
-  }
+  if (name !== "note.created") return
+  const noteId = String((payload as { id?: string }).id ?? "")
+  await jobs.enqueue(asJobDb(tx), {
+    name: sendWelcomeEmail.name,
+    workspaceId: WORKSPACE,
+    payload: { noteId },
+    idempotencyKey: \`welcome:\${noteId}\`,
+  })
 })
 `
 
 function worker(notes: boolean): string {
-  const handler = notes
-    ? `    index_note: async (args: { noteId: string }) => {
-      // Real example: (re)build a projection / search doc for the note.
-      console.log(JSON.stringify({ job: "index_note", noteId: args.noteId }))
-    },`
-    : `    // Register your job handlers here, e.g.:
-    // send_report: async () => { /* ... */ },`
-  return `import { createWorker, pgAdapter } from "@obh/jobs"
+  const d = jobExample(notes)
+  return `// Runs queued jobs: each tick claims a batch and executes the matching handler.
+// Handlers live here so the worker never imports across app boundaries; keep the
+// name + schema in sync with apps/api/src/platform/jobs.ts.
+import { createJobRegistry, createWorker, defineJob, pgAdapter, type JobDefinition } from "@obh/jobs"
+import { z } from "zod"
 import type { WorkerContext } from "../context"
+
+const ${d.export} = defineJob({
+  name: "${d.name}",
+  version: 1,
+  schema: ${d.schema},
+  handler: async (ctx, payload) => {
+    ctx.log.info("running ${d.name}", { ${d.field} })
+    // Real work goes here (call your mailer, render a PDF, …). Handlers must be
+    // idempotent: at-least-once execution means a job can run more than once.
+    console.log(JSON.stringify({ msg: "${d.name} done", ${d.field}, job_id: ctx.jobId }))
+  },
+})
+
+const registry = createJobRegistry([${d.export} as JobDefinition])
 
 let worker: ReturnType<typeof createWorker>
 
 export function init(ctx: WorkerContext): void {
-  worker = createWorker({
-    db: pgAdapter(ctx.pool),
-    handlers: {
-${handler}
-    },
-    batchSize: 20,
-    maxConcurrency: 5,
-    maxAttempts: 10,
-  })
+  worker = createWorker({ db: pgAdapter(ctx.pool), registry, instanceId: "worker" })
 }
 
 export async function tick(): Promise<void> {

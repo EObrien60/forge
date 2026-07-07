@@ -3,25 +3,31 @@ import { addPlatformPackage, apiFramework, hasNotesExample, migrationModule } fr
 
 export const apiKeys: Capability = {
   name: "api-keys",
-  describe: "Scoped machine API keys — hashed at rest, verified per request with required scopes",
+  describe: "Scoped machine-to-machine API keys (non-human credentials)",
   apply(ctx, plan) {
     addPlatformPackage(plan, ctx, "api-keys", { api: true })
     plan.create("scripts/migrations.d/api-keys.ts", migrationModule("api-keys"), "api-keys migrations wiring")
 
     if (ctx.hasApp("api")) {
       plan.create("apps/api/src/platform/api-keys.ts", CLIENT, "api-keys client")
-      plan.create("apps/api/src/routes/machine.ts", apiFramework(ctx) === "hono" ? ROUTE_HONO(hasNotesExample(ctx)) : ROUTE_EXPRESS(hasNotesExample(ctx)), "scope-protected machine route")
+      const hono = apiFramework(ctx) === "hono"
+      const notes = hasNotesExample(ctx)
+      plan.create("apps/api/src/routes/machine.ts", hono ? routeHono(notes) : routeExpress(notes), "scope-protected machine route")
     }
 
-    plan.addEnvVar({ name: "API_KEYS_PEPPER", example: "change-me-32-bytes-min", comment: "required — API keys won't work without it", secret: true })
+    plan.addEnvVar({
+      name: "API_KEYS_PEPPER",
+      example: "change-me-to-a-long-random-secret",
+      comment: "REQUIRED — api-keys won't work without it; keep out of the DB",
+      secret: true,
+    })
 
     plan.patchManifest({ platform: { "api-keys": true } })
-    plan.nextStep("Run `pnpm migrate` and set API_KEYS_PEPPER (secret). Issue keys via apiKeys.issue({ scopes }).")
+    plan.nextStep("Run `pnpm migrate` and set API_KEYS_PEPPER. Issue keys via apiKeys.create({ workspaceId, name, scopes }).")
   },
 }
 
-const CLIENT = `// Adjust to the @obh/api-keys version you install.
-import { createApiKeysClient, pgAdapter } from "@obh/api-keys"
+const CLIENT = `import { createApiKeysClient, pgAdapter } from "@obh/api-keys"
 import { pool } from "../db"
 
 export const apiKeys = createApiKeysClient({
@@ -30,54 +36,57 @@ export const apiKeys = createApiKeysClient({
 })
 `
 
-function ROUTE_HONO(notes: boolean): string {
+function routeHono(notes: boolean): string {
   const body = notes
-    ? `    // Protected: only machines whose key carries the "notes:write" scope get through.
-    const key = c.req.header("authorization")?.replace(/^Bearer /, "")
-    const result = await apiKeys.verify(key, { scope: "notes:write" })
-    if (!result.ok) return c.json({ error: "forbidden" }, 403)
-    const input = await c.req.json<{ title?: string; body?: string }>()
-    if (!input.title) return c.json({ error: "title is required" }, 400)
-    return c.json(await notes.createNote({ title: input.title, body: input.body }), 201)`
-    : `    const key = c.req.header("authorization")?.replace(/^Bearer /, "")
-    const result = await apiKeys.verify(key, { scope: "machine:write" })
-    if (!result.ok) return c.json({ error: "forbidden" }, 403)
-    return c.json({ ok: true, keyId: result.keyId })`
-  const imports = notes
-    ? `import { apiKeys } from "../platform/api-keys"
-import * as notes from "../domain/notes"`
-    : `import { apiKeys } from "../platform/api-keys"`
+    ? `    const body = await c.req.json<{ title?: string; body?: string }>()
+    if (!body.title) return c.json({ error: "title is required" }, 400)
+    return c.json(await notes.createNote({ title: body.title, body: body.body }), 201)`
+    : `    return c.json({ ok: true, principal: ctx.principalId })`
   return `import type { Hono } from "hono"
-${imports}
-
+import { ApiKeyAuthError } from "@obh/api-keys"
+import { apiKeys } from "../platform/api-keys"
+${notes ? 'import * as notes from "../domain/notes"\n' : ""}
 export function register(app: Hono): void {
-  app.post("/machine/notes", async (c) => {
+  app.post("/machine/${notes ? "notes" : "ping"}", async (c) => {
+    const bearer = (c.req.header("authorization") ?? "").replace(/^Bearer /, "")
+    let ctx
+    try {
+      ctx = await apiKeys.authenticate(bearer)
+    } catch (err) {
+      if (err instanceof ApiKeyAuthError) return c.json({ error: "invalid api key" }, 401)
+      throw err
+    }
+    if (!apiKeys.hasScope(ctx, "${notes ? "notes:write" : "machine:use"}")) {
+      return c.json({ error: "missing scope" }, 403)
+    }
 ${body}
   })
 }
 `
 }
 
-function ROUTE_EXPRESS(notes: boolean): string {
+function routeExpress(notes: boolean): string {
   const body = notes
-    ? `    const key = (req.headers.authorization ?? "").replace(/^Bearer /, "")
-    const result = await apiKeys.verify(key, { scope: "notes:write" })
-    if (!result.ok) return res.status(403).json({ error: "forbidden" })
-    if (!req.body.title) return res.status(400).json({ error: "title is required" })
+    ? `    if (!req.body.title) return res.status(400).json({ error: "title is required" })
     res.status(201).json(await notes.createNote({ title: req.body.title, body: req.body.body }))`
-    : `    const key = (req.headers.authorization ?? "").replace(/^Bearer /, "")
-    const result = await apiKeys.verify(key, { scope: "machine:write" })
-    if (!result.ok) return res.status(403).json({ error: "forbidden" })
-    res.json({ ok: true, keyId: result.keyId })`
-  const imports = notes
-    ? `import { apiKeys } from "../platform/api-keys"
-import * as notes from "../domain/notes"`
-    : `import { apiKeys } from "../platform/api-keys"`
+    : `    res.json({ ok: true, principal: ctx.principalId })`
   return `import type { Express, Request, Response } from "express"
-${imports}
-
+import { ApiKeyAuthError } from "@obh/api-keys"
+import { apiKeys } from "../platform/api-keys"
+${notes ? 'import * as notes from "../domain/notes"\n' : ""}
 export function register(app: Express): void {
-  app.post("/machine/notes", async (req: Request, res: Response) => {
+  app.post("/machine/${notes ? "notes" : "ping"}", async (req: Request, res: Response) => {
+    const bearer = (req.headers.authorization ?? "").replace(/^Bearer /, "")
+    let ctx
+    try {
+      ctx = await apiKeys.authenticate(bearer)
+    } catch (err) {
+      if (err instanceof ApiKeyAuthError) return res.status(401).json({ error: "invalid api key" })
+      throw err
+    }
+    if (!apiKeys.hasScope(ctx, "${notes ? "notes:write" : "machine:use"}")) {
+      return res.status(403).json({ error: "missing scope" })
+    }
 ${body}
   })
 }
