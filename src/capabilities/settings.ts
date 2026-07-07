@@ -6,6 +6,8 @@ export const settings: Capability = {
   describe: "Typed, scoped configuration — defaults in code, overrides per workspace in Postgres",
   apply(ctx, plan) {
     addPlatformPackage(plan, ctx, "settings", { api: true })
+    // defineSetting validates values with a zod schema.
+    if (ctx.hasApp("api")) plan.addDependency("apps/api", "zod", "^3.23.8")
     plan.create("scripts/migrations.d/settings.ts", migrationModule("settings"), "settings migrations wiring")
 
     if (ctx.hasApp("api")) {
@@ -19,46 +21,57 @@ export const settings: Capability = {
 }
 
 function registryFile(notes: boolean): string {
-  const defs = notes
-    ? `// A typed setting: a default in code, overridable per scope (e.g. workspace).
-export const notesRetentionDays = defineSetting({
+  const def = notes
+    ? `export const notesRetentionDays = defineSetting({
   key: "notes.retention_days",
-  type: "number",
-  default: 30,
-})
-
-const registry = createSettingsRegistry()
-registry.register(notesRetentionDays)`
-    : `const registry = createSettingsRegistry()`
-  return `// Adjust to the @obh/settings version you install.
-import { createSettingsClient, createSettingsRegistry, defineSetting, pgAdapter } from "@obh/settings"
+  schema: z.number().int().positive(),
+  defaultValue: 30,
+  scopes: ["platform", "workspace"],
+})`
+    : `export const exampleFlag = defineSetting({
+  key: "app.example_flag",
+  schema: z.boolean(),
+  defaultValue: false,
+  scopes: ["platform", "workspace"],
+})`
+  const exportName = notes ? "notesRetentionDays" : "exampleFlag"
+  return `import { createSettingsClient, createSettingsRegistry, defineSetting, pgAdapter } from "@obh/settings"
+import { z } from "zod"
 import { pool } from "../db"
 
-${defs}
+// Every platform row is scoped to a workspace. Single-tenant apps can leave this.
+export const WORKSPACE = process.env.WORKSPACE_ID ?? "default"
 
-export { registry }
-export const settings = createSettingsClient({ db: pgAdapter(pool), registry })
+// A typed setting: schema + default in code, overridable per scope (most specific
+// wins: user > group > workspace > platform > default).
+${def}
+
+export const registry = createSettingsRegistry([${exportName}])
+
+// The client is stateless; each call takes a db/tx handle and a resolution context.
+export const settings = createSettingsClient({ registry })
+export const settingsDb = pgAdapter(pool)
 `
 }
 
 const ROUTE_HONO = `import type { Hono } from "hono"
-import { settings } from "../platform/settings"
+import { settings, settingsDb, WORKSPACE } from "../platform/settings"
 
 export function register(app: Hono): void {
-  // Resolve a setting for a scope: ?scope=workspace:<id>, falling back to the default.
+  // Resolve a setting's effective value for the current workspace, falling back
+  // through platform default to the definition default.
   app.get("/settings/:key", async (c) => {
-    const scope = c.req.query("scope")
-    return c.json({ value: await settings.get(c.req.param("key"), { scope }) })
+    return c.json(await settings.resolve(settingsDb, c.req.param("key"), { workspaceId: WORKSPACE }))
   })
 }
 `
 
 const ROUTE_EXPRESS = `import type { Express, Request, Response } from "express"
-import { settings } from "../platform/settings"
+import { settings, settingsDb, WORKSPACE } from "../platform/settings"
 
 export function register(app: Express): void {
   app.get("/settings/:key", async (req: Request, res: Response) => {
-    res.json({ value: await settings.get(req.params.key, { scope: req.query.scope as string | undefined }) })
+    res.json(await settings.resolve(settingsDb, req.params.key, { workspaceId: WORKSPACE }))
   })
 }
 `

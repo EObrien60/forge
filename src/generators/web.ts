@@ -80,6 +80,7 @@ export function addWebApp(plan: Plan, opts: WebOptions): void {
   plan.create(`${dir}/vite.config.ts`, VITE_CONFIG, "vite config")
   plan.create(`${dir}/index.html`, indexHtml(opts.name), "admin index.html")
   plan.create(`${dir}/src/main.tsx`, MAIN, "admin entry")
+  plan.create(`${dir}/src/vite-env.d.ts`, '/// <reference types="vite/client" />\n', "vite client types (import.meta.env)")
   plan.create(`${dir}/src/api.ts`, apiTs(opts.scope, opts.example), "admin API client instance")
   plan.create(`${dir}/src/App.tsx`, opts.example === "notes" ? APP_NOTES : APP_BASE, "admin App")
   plan.create(`${dir}/nginx.conf`, NGINX, "nginx SPA config")
