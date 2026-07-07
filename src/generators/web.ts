@@ -84,8 +84,15 @@ export function addWebApp(plan: Plan, opts: WebOptions): void {
   plan.create(`${dir}/src/api.ts`, apiTs(opts.scope, opts.example), "admin API client instance")
   plan.create(`${dir}/src/App.tsx`, opts.example === "notes" ? APP_NOTES : APP_BASE, "admin App")
   plan.create(`${dir}/nginx.conf`, NGINX, "nginx SPA config")
+  plan.create(`${dir}/.env.production`, ENV_PRODUCTION, "admin production API URL (EDIT before deploying)")
   plan.create(`${dir}/Dockerfile`, dockerfile(pkgName, opts.name), "admin Dockerfile (root-context build)")
 }
+
+const ENV_PRODUCTION = `# The admin is a static bundle served on its OWN origin, separate from the API.
+# Set this to the API's PUBLIC URL (the go./api. domain in deploy/*/lwd.toml)
+# BEFORE deploying — Vite bakes it into the build. Dev falls back to :8080.
+VITE_API_BASE_URL=https://api.example.com
+`
 
 const VITE_CONFIG = `import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
