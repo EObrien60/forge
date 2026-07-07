@@ -1,4 +1,4 @@
-import type { AppRecord, CapabilityName, PackageRecord, RecipeName, Topology } from "../types"
+import type { ApiFramework, AppRecord, CapabilityName, ExampleDomain, PackageRecord, RecipeName, Topology } from "../types"
 import type { Plan } from "../project/plan"
 import { addProjectSkeleton } from "../generators/root"
 import { addApiApp } from "../generators/api"
@@ -10,6 +10,9 @@ export interface RecipeInput {
   name: string
   scope: string
   topology: Topology
+  apiFramework: ApiFramework
+  example: ExampleDomain
+  sdk: boolean
 }
 
 export interface RecipeShape {
@@ -26,34 +29,42 @@ export interface Recipe {
   generate(plan: Plan, input: RecipeInput, shape: RecipeShape): void
 }
 
-const apiApp: AppRecord = { name: "api", path: "apps/api", framework: "hono", role: "api" }
-const adminApp: AppRecord = { name: "admin", path: "apps/admin", framework: "vite-react", role: "web" }
 const workerApp: AppRecord = { name: "worker", path: "apps/worker", role: "worker" }
 const sdkPkg: PackageRecord = { name: "sdk", path: "packages/sdk" }
+
+function apiApp(input: RecipeInput): AppRecord {
+  return { name: "api", path: "apps/api", framework: input.apiFramework, role: "api" }
+}
+const adminApp: AppRecord = { name: "admin", path: "apps/admin", framework: "vite-react", role: "web" }
 
 function generateApps(plan: Plan, input: RecipeInput, shape: RecipeShape): void {
   addProjectSkeleton(plan, { name: input.name, topology: input.topology })
   for (const app of shape.apps) {
-    if (app.role === "api") addApiApp(plan, { scope: input.scope })
-    else if (app.role === "web") addWebApp(plan, { scope: input.scope, name: app.name })
+    if (app.role === "api") addApiApp(plan, { scope: input.scope, framework: input.apiFramework, example: input.example })
+    else if (app.role === "web") addWebApp(plan, { scope: input.scope, name: app.name, example: input.example })
     else if (app.role === "worker") addWorkerApp(plan, { scope: input.scope })
   }
-  if (shape.packages.some((p) => p.name === "sdk")) addSdkPackage(plan, { scope: input.scope })
+  if (shape.packages.some((p) => p.name === "sdk")) addSdkPackage(plan, { scope: input.scope, example: input.example })
+}
+
+/** Drop the SDK package from a shape when the project opts out of it. */
+function withSdk(input: RecipeInput, packages: PackageRecord[]): PackageRecord[] {
+  return input.sdk ? packages : packages.filter((p) => p.name !== "sdk")
 }
 
 export const RECIPES: Record<RecipeName, Recipe> = {
   "api-web-worker": {
     name: "api-web-worker",
     describe: "API + admin frontend + worker + shared SDK",
-    shape: () => ({ apps: [apiApp, adminApp, workerApp], packages: [sdkPkg], autoPrimitives: [] }),
+    shape: (input) => ({ apps: [apiApp(input), adminApp, workerApp], packages: withSdk(input, [sdkPkg]), autoPrimitives: [] }),
     generate: generateApps,
   },
   "full-saas": {
     name: "full-saas",
     describe: "api-web-worker plus recommended primitives (events, jobs, files, audit)",
-    shape: () => ({
-      apps: [apiApp, adminApp, workerApp],
-      packages: [sdkPkg],
+    shape: (input) => ({
+      apps: [apiApp(input), adminApp, workerApp],
+      packages: withSdk(input, [sdkPkg]),
       autoPrimitives: ["events", "jobs", "files", "audit"],
     }),
     generate: generateApps,
@@ -61,7 +72,7 @@ export const RECIPES: Record<RecipeName, Recipe> = {
   "api-only": {
     name: "api-only",
     describe: "Backend API + shared SDK",
-    shape: () => ({ apps: [apiApp], packages: [sdkPkg], autoPrimitives: [] }),
+    shape: (input) => ({ apps: [apiApp(input)], packages: withSdk(input, [sdkPkg]), autoPrimitives: [] }),
     generate: generateApps,
   },
   worker: {
@@ -75,7 +86,7 @@ export const RECIPES: Record<RecipeName, Recipe> = {
     describe: "OBH primitive-style package (deferred in v1)",
     shape: () => ({ apps: [], packages: [], autoPrimitives: [] }),
     generate: () => {
-      throw new Error("The platform-package recipe is not implemented in Forge v1.")
+      throw new Error("The platform-package recipe is not implemented yet.")
     },
   },
 }

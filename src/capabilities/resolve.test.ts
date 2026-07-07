@@ -14,6 +14,16 @@ describe("resolveOrder", () => {
   it("preserves independent capabilities in order", () => {
     expect(resolveOrder(["jobs", "files"])).toEqual(["jobs", "files"])
   })
+
+  it("expands multi-prerequisite capabilities before the dependent", () => {
+    // import-export requires files AND jobs
+    const order = resolveOrder(["import-export"])
+    expect(order[order.length - 1]).toBe("import-export")
+    expect(order).toContain("files")
+    expect(order).toContain("jobs")
+    expect(order.indexOf("files")).toBeLessThan(order.indexOf("import-export"))
+    expect(order.indexOf("jobs")).toBeLessThan(order.indexOf("import-export"))
+  })
 })
 
 describe("missingPrerequisites", () => {
@@ -27,9 +37,12 @@ describe("missingPrerequisites", () => {
 })
 
 describe("isImplemented", () => {
-  it("knows the v1 capabilities", () => {
+  it("knows the shipped capabilities", () => {
     expect(isImplemented("events")).toBe(true)
     expect(isImplemented("jobs")).toBe(true)
-    expect(isImplemented("search")).toBe(false)
+    expect(isImplemented("search")).toBe(true)
+    expect(isImplemented("notifications")).toBe(true)
+    // A name that is not a real capability.
+    expect(isImplemented("nope" as never)).toBe(false)
   })
 })

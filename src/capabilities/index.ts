@@ -4,15 +4,31 @@ import { events } from "./events"
 import { jobs } from "./jobs"
 import { files } from "./files"
 import { audit } from "./audit"
+import { settings } from "./settings"
+import { apiKeys } from "./api-keys"
+import { webhooks } from "./webhooks"
+import { importExport } from "./import-export"
+import { entitlements } from "./entitlements"
+import { search } from "./search"
+import { analytics } from "./analytics"
+import { notifications } from "./notifications"
 
 export type { Capability } from "./types"
 
-/** All capabilities Forge can install today. v1 ships events/jobs/files/audit. */
+/** Every OBH platform primitive Forge can install. */
 export const CAPABILITIES: Partial<Record<CapabilityName, Capability>> = {
   events,
   jobs,
   files,
   audit,
+  settings,
+  "api-keys": apiKeys,
+  webhooks,
+  "import-export": importExport,
+  entitlements,
+  search,
+  analytics,
+  notifications,
 }
 
 export function getCapability(name: CapabilityName): Capability | undefined {

@@ -10,6 +10,29 @@ export type WebFramework = "vite-react"
 /** Deployment target. Only lwd is first-class today. */
 export type DeployTarget = "lwd"
 
+/** The example domain a project is scaffolded with (or none). */
+export type ExampleDomain = "notes" | null
+
+/**
+ * Project-level choices Forge records so it (and Claude skills) stay flexible
+ * instead of assuming a fixed structure. Overridable via forge.json.
+ */
+export interface ForgeConfig {
+  /** Backend framework for the API app. */
+  apiFramework: ApiFramework
+  /** Whether a shared SDK package exists. */
+  sdk: boolean
+  /** The example domain generated (or null for a bare health-only app). */
+  example: ExampleDomain
+  /** Convention directories generated apps auto-load from (recorded, not hard-coded). */
+  conventions: {
+    routesDir: string
+    consumersDir: string
+    busDir: string
+    migrationsDir: string
+  }
+}
+
 /** lwd deployment topology (see §14 of the spec). */
 export type Topology = "small" | "split"
 
@@ -64,9 +87,12 @@ export interface ForgeManifest {
   apps: Record<string, AppRecord>
   packages: Record<string, PackageRecord>
   platform: Partial<Record<CapabilityName, boolean>>
+  config: ForgeConfig
   deploy: {
     target: DeployTarget
     topology: Topology
+    /** "owner/repo" (or a full git URL) the lwd manifests deploy from. */
+    repo?: string
   }
 }
 

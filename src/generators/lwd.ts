@@ -34,28 +34,39 @@ export function addLwdManifests(plan: Plan, manifest: ForgeManifest): void {
   const hasWorker = Object.values(manifest.apps).some((a) => a.role === "worker")
   const includeAuth = true
   const secrets = computeSecrets(manifest, includeAuth)
+  const gitUrl = repoUrl(manifest.deploy.repo, name)
 
   if (hasApi) {
-    plan.create(`deploy/api.lwd.toml`, apiManifest(name, topology, secrets), "lwd manifest: API surface")
+    plan.create(`deploy/api.lwd.toml`, apiManifest(name, topology, secrets, gitUrl), "lwd manifest: API surface")
   }
   if (hasAdmin) {
-    plan.create(`deploy/admin.lwd.toml`, adminManifest(name), "lwd manifest: admin frontend")
+    plan.create(`deploy/admin.lwd.toml`, adminManifest(name, gitUrl), "lwd manifest: admin frontend")
   }
   if (hasWorker) {
-    plan.create(`deploy/worker.lwd.toml`, workerManifest(name, secrets.filter((s) => s === "DATABASE_URL")), "lwd manifest: worker surface")
+    plan.create(`deploy/worker.lwd.toml`, workerManifest(name, secrets.filter((s) => s === "DATABASE_URL"), gitUrl), "lwd manifest: worker surface")
   }
   if (topology === "split") {
     plan.create(`deploy/db.lwd.toml`, dbManifest(name), "lwd manifest: dedicated Postgres")
   }
 
-  plan.nextStep(`Set the git URL in deploy/*.lwd.toml, then: lwd secret set ${name}-api ${secrets[0]}`)
+  if (!manifest.deploy.repo) {
+    plan.nextStep(`No git repo known — set the [git].url in deploy/*.lwd.toml before deploying.`)
+  }
+  plan.nextStep(`Set secret values: lwd secret set ${name}-api ${secrets.join(" ")}`)
+}
+
+/** Resolve a repo slug/url (or none) into a git URL for the manifests. */
+function repoUrl(repo: string | undefined, name: string): string {
+  if (!repo) return `https://github.com/${name}/${name}`
+  if (repo.startsWith("http") || repo.startsWith("git@")) return repo.replace(/\.git$/, "")
+  return `https://github.com/${repo}`
 }
 
 function tomlList(items: string[]): string {
   return "[" + items.map((s) => `"${s}"`).join(", ") + "]"
 }
 
-function apiManifest(name: string, topology: Topology, secrets: string[]): string {
+function apiManifest(name: string, topology: Topology, secrets: string[], gitUrl: string): string {
   // In split topology the API scales (replicas) and the DB is a separate app.
   // In small topology the API co-locates a Postgres backing service.
   const scalable = topology === "split"
@@ -70,8 +81,7 @@ function apiManifest(name: string, topology: Topology, secrets: string[]): strin
   lines.push(
     ``,
     `[git]`,
-    `# TODO: set your repository URL`,
-    `url  = "https://github.com/OWNER/${name}"`,
+    `url  = "${gitUrl}"`,
     `ref  = "main"`,
     `path = "apps/api"`,
     ``,
@@ -98,7 +108,7 @@ function apiManifest(name: string, topology: Topology, secrets: string[]): strin
   return lines.join("\n") + "\n"
 }
 
-function adminManifest(name: string): string {
+function adminManifest(name: string, gitUrl: string): string {
   // Root-context build: the admin imports the workspace SDK, so the build needs
   // the whole repo. git.path = "." and the Dockerfile lives under apps/admin.
   return [
@@ -107,7 +117,7 @@ function adminManifest(name: string): string {
     `port   = 80`,
     ``,
     `[git]`,
-    `url  = "https://github.com/OWNER/${name}"`,
+    `url  = "${gitUrl}"`,
     `ref  = "main"`,
     `path = "."`,
     ``,
@@ -122,7 +132,7 @@ function adminManifest(name: string): string {
   ].join("\n")
 }
 
-function workerManifest(name: string, secrets: string[]): string {
+function workerManifest(name: string, secrets: string[], gitUrl: string): string {
   return [
     `name    = "${name}-worker"`,
     `# lwd has no worker type: a worker is a normal surface app and still needs a`,
@@ -133,7 +143,7 @@ function workerManifest(name: string, secrets: string[]): string {
     `secrets = ${tomlList(secrets.length ? secrets : ["DATABASE_URL"])}`,
     ``,
     `[git]`,
-    `url  = "https://github.com/OWNER/${name}"`,
+    `url  = "${gitUrl}"`,
     `ref  = "main"`,
     `path = "apps/worker"`,
     ``,

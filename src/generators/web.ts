@@ -1,9 +1,11 @@
+import type { ExampleDomain } from "../types"
 import type { Plan } from "../project/plan"
 
 export interface WebOptions {
   scope: string
   /** App directory name, e.g. "admin". */
   name: string
+  example: ExampleDomain
 }
 
 /**
@@ -78,7 +80,8 @@ export function addWebApp(plan: Plan, opts: WebOptions): void {
   plan.create(`${dir}/vite.config.ts`, VITE_CONFIG, "vite config")
   plan.create(`${dir}/index.html`, indexHtml(opts.name), "admin index.html")
   plan.create(`${dir}/src/main.tsx`, MAIN, "admin entry")
-  plan.create(`${dir}/src/App.tsx`, appTsx(opts.scope), "admin App")
+  plan.create(`${dir}/src/api.ts`, apiTs(opts.scope, opts.example), "admin API client instance")
+  plan.create(`${dir}/src/App.tsx`, opts.example === "notes" ? APP_NOTES : APP_BASE, "admin App")
   plan.create(`${dir}/nginx.conf`, NGINX, "nginx SPA config")
   plan.create(`${dir}/Dockerfile`, dockerfile(pkgName, opts.name), "admin Dockerfile (root-context build)")
 }
@@ -118,11 +121,23 @@ createRoot(document.getElementById("root")!).render(
 )
 `
 
-function appTsx(scope: string): string {
-  return `import { useEffect, useState } from "react"
-import { createClient, type HealthStatus } from "${scope}/sdk"
+function apiTs(scope: string, example: ExampleDomain): string {
+  const typeReexport =
+    example === "notes"
+      ? `export type { HealthStatus, Note, CreateNoteInput, UpdateNoteInput } from "${scope}/sdk"`
+      : `export type { HealthStatus } from "${scope}/sdk"`
+  return `import { createClient } from "${scope}/sdk"
+${typeReexport}
 
-const api = createClient({ baseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080" })
+export const api = createClient({
+  baseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080",
+  token: () => localStorage.getItem("token"),
+})
+`
+}
+
+const APP_BASE = `import { useEffect, useState } from "react"
+import { api, type HealthStatus } from "./api"
 
 export function App(): JSX.Element {
   const [health, setHealth] = useState<HealthStatus | null>(null)
@@ -130,14 +145,66 @@ export function App(): JSX.Element {
     api.health().then(setHealth).catch(() => setHealth({ status: "degraded" }))
   }, [])
   return (
-    <main style={{ fontFamily: "system-ui", padding: 32 }}>
+    <main style={{ fontFamily: "system-ui", padding: 32, maxWidth: 720, margin: "0 auto" }}>
       <h1>Admin</h1>
       <p>API health: {health?.status ?? "…"}</p>
     </main>
   )
 }
 `
+
+const APP_NOTES = `import { useEffect, useState } from "react"
+import { api, type Note } from "./api"
+
+export function App(): JSX.Element {
+  const [notes, setNotes] = useState<Note[]>([])
+  const [title, setTitle] = useState("")
+  const [body, setBody] = useState("")
+  const [error, setError] = useState<string | null>(null)
+
+  const reload = () => api.notes.list().then(setNotes).catch((e) => setError(String(e)))
+  useEffect(() => {
+    reload()
+  }, [])
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!title.trim()) return
+    await api.notes.create({ title, body })
+    setTitle("")
+    setBody("")
+    await reload()
+  }
+
+  const remove = async (id: string) => {
+    await api.notes.remove(id)
+    await reload()
+  }
+
+  return (
+    <main style={{ fontFamily: "system-ui", padding: 32, maxWidth: 720, margin: "0 auto" }}>
+      <h1>Notes</h1>
+      {error && <p style={{ color: "crimson" }}>{error}</p>}
+
+      <form onSubmit={submit} style={{ display: "grid", gap: 8, marginBottom: 24 }}>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Body" rows={3} />
+        <button type="submit">Add note</button>
+      </form>
+
+      <ul style={{ display: "grid", gap: 12, listStyle: "none", padding: 0 }}>
+        {notes.map((n) => (
+          <li key={n.id} style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
+            <strong>{n.title}</strong>
+            <p style={{ margin: "4px 0", whiteSpace: "pre-wrap" }}>{n.body}</p>
+            <button onClick={() => remove(n.id)}>Delete</button>
+          </li>
+        ))}
+      </ul>
+    </main>
+  )
 }
+`
 
 const NGINX = `server {
   listen 80;

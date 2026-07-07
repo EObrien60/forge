@@ -1,5 +1,5 @@
 import type { Capability } from "./types"
-import { addPlatformPackage, migrationModule } from "./helpers"
+import { addPlatformPackage, apiFramework, migrationModule } from "./helpers"
 
 export const files: Capability = {
   name: "files",
@@ -9,24 +9,23 @@ export const files: Capability = {
     plan.create("scripts/migrations.d/files.ts", migrationModule("files"), "files migrations wiring")
 
     if (ctx.hasApp("api")) {
-      plan.create("apps/api/src/platform/files.ts", FILES_API, "files client")
-      plan.create("apps/api/src/routes/files-example.ts", FILES_ROUTE, "example upload/download routes")
+      plan.create("apps/api/src/platform/files.ts", CLIENT, "files client")
+      plan.create("apps/api/src/routes/files.ts", apiFramework(ctx) === "hono" ? ROUTE_HONO : ROUTE_EXPRESS, "signed upload/download routes")
     }
 
     plan.addEnvVar({ name: "S3_ENDPOINT", example: "http://localhost:9000", comment: "S3-compatible endpoint (MinIO in dev)" })
     plan.addEnvVar({ name: "S3_REGION", example: "us-east-1" })
     plan.addEnvVar({ name: "S3_BUCKET", example: `${ctx.manifest?.name ?? "app"}-files` })
-    plan.addEnvVar({ name: "S3_ACCESS_KEY_ID", example: "", comment: "secret — set via lwd secret set", secret: true })
-    plan.addEnvVar({ name: "S3_SECRET_ACCESS_KEY", example: "", comment: "secret — set via lwd secret set", secret: true })
+    plan.addEnvVar({ name: "S3_ACCESS_KEY_ID", example: "minioadmin", comment: "secret in prod — set via lwd secret set", secret: true })
+    plan.addEnvVar({ name: "S3_SECRET_ACCESS_KEY", example: "minioadmin", comment: "secret in prod — set via lwd secret set", secret: true })
 
     plan.patchManifest({ platform: { files: true } })
-    plan.nextStep("Run `pnpm migrate`. For local dev, run MinIO and create the S3_BUCKET.")
+    plan.nextStep("Run `pnpm migrate`. For local dev run MinIO and create the S3_BUCKET.")
   },
 }
 
-const FILES_API = `// Adjust to the @obh/files version you install.
-import { createFilesClient, createS3StorageProvider } from "@obh/files"
-import { pgAdapter } from "@obh/files"
+const CLIENT = `// Adjust to the @obh/files version you install.
+import { createFilesClient, createS3StorageProvider, pgAdapter } from "@obh/files"
 import { pool } from "../db"
 
 const storage = createS3StorageProvider({
@@ -40,20 +39,41 @@ const storage = createS3StorageProvider({
 export const files = createFilesClient({ db: pgAdapter(pool), storage })
 `
 
-const FILES_ROUTE = `import type { Hono } from "hono"
+const ROUTE_HONO = `import type { Hono } from "hono"
 import { files } from "../platform/files"
 
 export function register(app: Hono): void {
-  // Client asks for a signed upload URL, PUTs bytes directly to storage.
+  // 1. Client asks for a signed URL, then PUTs bytes straight to storage.
   app.post("/files/upload-url", async (c) => {
     const body = await c.req.json<{ filename: string; workspaceId: string }>()
-    const upload = await files.createUpload({ filename: body.filename, workspaceId: body.workspaceId })
-    return c.json(upload)
+    return c.json(await files.createUpload({ filename: body.filename, workspaceId: body.workspaceId }))
+  })
+
+  // 2. Client confirms the upload completed (server verifies via HEAD).
+  app.post("/files/:id/complete", async (c) => {
+    return c.json(await files.completeUpload(c.req.param("id")))
   })
 
   app.get("/files/:id/download-url", async (c) => {
-    const url = await files.createDownloadUrl(c.req.param("id"))
-    return c.json({ url })
+    return c.json({ url: await files.createDownloadUrl(c.req.param("id")) })
+  })
+}
+`
+
+const ROUTE_EXPRESS = `import type { Express, Request, Response } from "express"
+import { files } from "../platform/files"
+
+export function register(app: Express): void {
+  app.post("/files/upload-url", async (req: Request, res: Response) => {
+    res.json(await files.createUpload({ filename: req.body.filename, workspaceId: req.body.workspaceId }))
+  })
+
+  app.post("/files/:id/complete", async (req: Request, res: Response) => {
+    res.json(await files.completeUpload(req.params.id))
+  })
+
+  app.get("/files/:id/download-url", async (req: Request, res: Response) => {
+    res.json({ url: await files.createDownloadUrl(req.params.id) })
   })
 }
 `

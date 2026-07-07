@@ -1,7 +1,18 @@
+import type { ApiFramework } from "../types"
 import type { ProjectContext } from "../project/context"
 import type { Plan } from "../project/plan"
 
 const OBH_VERSION = "^0.1.0"
+
+/** The API framework the project chose (defaults to hono). */
+export function apiFramework(ctx: ProjectContext): ApiFramework {
+  return ctx.manifest?.config?.apiFramework ?? "hono"
+}
+
+/** Whether the project was scaffolded with the notes example domain. */
+export function hasNotesExample(ctx: ProjectContext): boolean {
+  return ctx.manifest?.config?.example === "notes"
+}
 
 /** Map a capability's short name to its published @obh package name. */
 export const OBH_PACKAGE: Record<string, string> = {

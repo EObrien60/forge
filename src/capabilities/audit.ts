@@ -1,5 +1,5 @@
 import type { Capability } from "./types"
-import { addPlatformPackage, migrationModule } from "./helpers"
+import { addPlatformPackage, hasNotesExample, migrationModule } from "./helpers"
 
 export const audit: Capability = {
   name: "audit",
@@ -9,34 +9,51 @@ export const audit: Capability = {
     addPlatformPackage(plan, ctx, "audit", { worker: true })
     plan.create("scripts/migrations.d/audit.ts", migrationModule("audit"), "audit migrations wiring")
 
+    const rules = rulesFile(hasNotesExample(ctx))
     if (ctx.hasWorker()) {
-      // Rules live in the worker app so the consumer can import them without
-      // crossing app boundaries (which would break the worker's tsc rootDir).
-      plan.create("apps/worker/src/audit-rules.ts", AUDIT_RULES, "audit rule definitions")
-      plan.create("apps/worker/src/consumers.d/audit.ts", AUDIT_WORKER, "audit event consumer tick")
+      // Rules live in the worker so the consumer imports them without crossing
+      // app boundaries (which would break the worker's tsc rootDir).
+      plan.create("apps/worker/src/audit-rules.ts", rules, "audit rule definitions")
+      plan.create("apps/worker/src/consumers.d/audit.ts", WORKER, "audit event consumer tick")
     } else {
-      plan.create("apps/api/src/platform/audit-rules.ts", AUDIT_RULES, "audit rule definitions (add a worker to consume them)")
+      plan.create("apps/api/src/platform/audit-rules.ts", rules, "audit rules (add a worker to consume them)")
     }
 
     plan.patchManifest({ platform: { audit: true } })
-    plan.nextStep("Run `pnpm migrate`. Define audit rules in apps/worker/src/audit-rules.ts.")
+    plan.nextStep("Run `pnpm migrate`. Edit audit rules in apps/worker/src/audit-rules.ts.")
   },
 }
 
-const AUDIT_RULES = `// Adjust to the @obh/audit version you install.
-import { defineAuditRule, createRuleSet } from "@obh/audit"
+function rulesFile(notes: boolean): string {
+  const rules = notes
+    ? `  defineAuditRule({
+    event: "note.created",
+    action: "note.created",
+    target: (p: { id: string }) => ({ type: "note", id: p.id }),
+  }),
+  defineAuditRule({
+    event: "note.updated",
+    action: "note.updated",
+    target: (p: { id: string }) => ({ type: "note", id: p.id }),
+  }),
+  defineAuditRule({
+    event: "note.deleted",
+    action: "note.deleted",
+    target: (p: { id: string }) => ({ type: "note", id: p.id }),
+  }),`
+    : `  // defineAuditRule({ event: "thing.created", action: "thing.created",
+  //   target: (p) => ({ type: "thing", id: p.id }) }),`
+  return `// Adjust to the @obh/audit version you install.
+import { createRuleSet, defineAuditRule } from "@obh/audit"
 
 // Map domain events to immutable audit entries.
 export const auditRules = createRuleSet([
-  defineAuditRule({
-    event: "example.pinged",
-    action: "example.pinged",
-    target: () => ({ type: "example", id: "ping" }),
-  }),
+${rules}
 ])
 `
+}
 
-const AUDIT_WORKER = `// Consumes events and records audit entries. Reads platform.event_deliveries
+const WORKER = `// Consumes events and records audit entries. Reads platform.event_deliveries
 // for the "audit" consumer (standalone Option B).
 import { createAuditWorker, pgAdapter } from "@obh/audit"
 import { auditRules } from "../audit-rules"

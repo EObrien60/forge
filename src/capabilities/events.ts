@@ -1,58 +1,67 @@
 import type { Capability } from "./types"
-import { addPlatformPackage, migrationModule } from "./helpers"
+import { addPlatformPackage, hasNotesExample, migrationModule } from "./helpers"
 
 export const events: Capability = {
   name: "events",
-  describe: "Postgres event outbox + dispatcher (facts emitted inside your transactions)",
+  describe: "Postgres event outbox + dispatcher — durable facts emitted inside your transactions",
   apply(ctx, plan) {
     addPlatformPackage(plan, ctx, "events", { api: true, worker: true })
     plan.create("scripts/migrations.d/events.ts", migrationModule("events"), "events migrations wiring")
 
     if (ctx.hasApp("api")) {
-      plan.create("apps/api/src/platform/events.ts", EVENTS_API, "events registry + client")
-      plan.create("apps/api/src/routes/events-example.ts", EVENTS_ROUTE, "example emit route")
+      plan.create("apps/api/src/platform/events.ts", registryFile(hasNotesExample(ctx)), "events registry + client")
+      // Bridge the in-app bus to the durable outbox — same transaction as the write.
+      plan.create("apps/api/src/bus.d/events-outbox.ts", OUTBOX, "forward domain facts to the outbox")
     }
     if (ctx.hasWorker()) {
-      plan.create("apps/worker/src/consumers.d/events.ts", EVENTS_WORKER, "events dispatcher/runner tick")
+      plan.create("apps/worker/src/consumers.d/events.ts", WORKER, "events dispatcher + delivery tick")
     }
 
     plan.patchManifest({ platform: { events: true } })
-    plan.nextStep("Run `pnpm migrate` to create platform.events, then emit `example.pinged` via POST /examples/ping.")
+    plan.nextStep("Run `pnpm migrate`. Domain facts (e.g. note.created) now land in platform.events.")
   },
 }
 
-const EVENTS_API = `// Adjust to the @obh/events version you install.
+function registryFile(notes: boolean): string {
+  const defs = notes
+    ? `export const noteCreated = defineEvent({ name: "note.created" })
+export const noteUpdated = defineEvent({ name: "note.updated" })
+export const noteDeleted = defineEvent({ name: "note.deleted" })
+
+const registry = createEventRegistry()
+registry.register(noteCreated)
+registry.register(noteUpdated)
+registry.register(noteDeleted)`
+    : `const registry = createEventRegistry()`
+  return `// Adjust to the @obh/events version you install.
 import { createEventClient, createEventRegistry, defineEvent, pgAdapter } from "@obh/events"
 import { pool } from "../db"
 
-export const examplePinged = defineEvent({ name: "example.pinged" })
+${defs}
 
-export const registry = createEventRegistry()
-registry.register(examplePinged)
-
-// emit() runs inside the caller's transaction; here it uses the shared pool.
+export { registry }
 export const events = createEventClient({ db: pgAdapter(pool), registry })
 `
-
-const EVENTS_ROUTE = `import type { Hono } from "hono"
-import { events, examplePinged } from "../platform/events"
-
-export function register(app: Hono): void {
-  app.post("/examples/ping", async (c) => {
-    await events.emit(examplePinged, { at: new Date().toISOString() })
-    return c.json({ emitted: "example.pinged" })
-  })
 }
+
+const OUTBOX = `import { onEmit } from "../bus"
+import { events } from "../platform/events"
+
+// Every domain fact emitted on the bus is written to the durable outbox on the
+// same transaction, so events can never be lost after a committed write.
+onEmit(async (tx, name, payload) => {
+  await events.emit(tx, name, payload)
+})
 `
 
-const EVENTS_WORKER = `// Drives the events outbox: dispatch facts to consumers, then deliver.
+const WORKER = `// Dispatches facts to consumers, then delivers (at-least-once, backoff, dead-letter).
 import { createConsumerRunner, createEventDispatcher, pgAdapter } from "@obh/events"
 import type { WorkerContext } from "../context"
 
 let dispatcher: ReturnType<typeof createEventDispatcher>
 let runner: ReturnType<typeof createConsumerRunner>
 
-// Register your consumers here (notifications, audit, analytics, …).
+// Register consumers (notifications, audit, analytics, search, webhooks) here.
 const consumers: any[] = []
 
 export function init(ctx: WorkerContext): void {

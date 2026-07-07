@@ -81,7 +81,7 @@ export function addProjectSkeleton(plan: Plan, opts: SkeletonOptions): void {
     "gitignore",
   )
 
-  plan.create(".env.example", `# ${name} environment\n# Copy to .env and fill in. Never commit real secrets.\n\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/${name}\n`, "environment example")
+  plan.create(".env.example", envBase(name), "environment example")
 
   plan.create("migrations/0001_init.sql", INIT_SQL, "initial product migration")
 
@@ -167,7 +167,15 @@ main().catch((err) => {
 })
 `
 
-function ciYaml(name: string): string {
+export function envBase(name: string): string {
+  return `# ${name} environment
+# Copy to .env and fill in. Never commit real secrets.
+
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/${name}
+`
+}
+
+export function ciYaml(name: string): string {
   return `name: CI
 
 on:

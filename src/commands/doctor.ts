@@ -11,7 +11,16 @@ interface Check {
   hint?: string
 }
 
-const WORKER_PRIMITIVES: CapabilityName[] = ["events", "jobs", "audit"]
+const WORKER_PRIMITIVES: CapabilityName[] = [
+  "events",
+  "jobs",
+  "audit",
+  "webhooks",
+  "import-export",
+  "search",
+  "analytics",
+  "notifications",
+]
 
 /** `forge doctor` — check a project against OBH conventions. Reports only. */
 export async function doctorCommand(): Promise<void> {
