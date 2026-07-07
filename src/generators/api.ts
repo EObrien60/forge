@@ -81,11 +81,26 @@ function packageJson(scope: string, framework: ApiFramework): string {
 }
 
 function tsconfig(): string {
+  // Self-contained (not `extends: ../../tsconfig.base.json`): the app's Docker
+  // build context is the app dir, so the repo-root base isn't available there.
   return (
     JSON.stringify(
       {
-        extends: "../../tsconfig.base.json",
-        compilerOptions: { rootDir: "src", outDir: "dist" },
+        compilerOptions: {
+          target: "ES2022",
+          module: "commonjs",
+          moduleResolution: "node",
+          lib: ["ES2022"],
+          rootDir: "src",
+          outDir: "dist",
+          strict: true,
+          esModuleInterop: true,
+          skipLibCheck: true,
+          forceConsistentCasingInFileNames: true,
+          resolveJsonModule: true,
+          sourceMap: true,
+          types: ["node"],
+        },
         include: ["src"],
         exclude: ["dist", "node_modules", "src/**/*.test.ts"],
       },

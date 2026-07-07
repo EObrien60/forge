@@ -227,7 +227,8 @@ COPY . .
 RUN pnpm install --no-frozen-lockfile
 ARG VITE_API_BASE_URL
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-RUN pnpm --filter "${pkgName}" build
+# "..." builds the workspace SDK (a dependency) before Vite bundles the admin.
+RUN pnpm --filter "${pkgName}..." build
 
 FROM nginx:1.27-alpine
 COPY --from=builder /repo/apps/${name}/dist /usr/share/nginx/html

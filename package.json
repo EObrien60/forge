@@ -1,6 +1,6 @@
 {
   "name": "@obh/forge",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": false,
   "description": "OBH Forge — deterministic scaffolding and delivery tooling for OBH software projects.",
   "license": "MIT",

@@ -47,14 +47,22 @@ export function addSdkPackage(plan: Plan, opts: SdkOptions): void {
     `${dir}/tsconfig.json`,
     JSON.stringify(
       {
-        extends: "../../tsconfig.base.json",
+        // Self-contained + ESM so frontends bundle it cleanly (and it builds in
+        // any Docker context without the repo-root base tsconfig).
         compilerOptions: {
-          rootDir: "src",
-          outDir: "dist",
-          // Emit ESM (overrides the CommonJS base) so frontends bundle it cleanly.
+          target: "ES2022",
           module: "ESNext",
           moduleResolution: "bundler",
           lib: ["ES2022", "DOM"],
+          rootDir: "src",
+          outDir: "dist",
+          declaration: true,
+          sourceMap: true,
+          strict: true,
+          esModuleInterop: true,
+          skipLibCheck: true,
+          forceConsistentCasingInFileNames: true,
+          resolveJsonModule: true,
         },
         include: ["src"],
         exclude: ["dist", "node_modules", "src/**/*.test.ts"],

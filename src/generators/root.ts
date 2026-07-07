@@ -81,6 +81,12 @@ export function addProjectSkeleton(plan: Plan, opts: SkeletonOptions): void {
     "gitignore",
   )
 
+  plan.create(
+    ".dockerignore",
+    ["node_modules", "**/node_modules", "dist", "**/dist", ".git", "coverage", "*.log", ".env", ".env.local", ""].join("\n"),
+    "dockerignore (keeps node_modules/.git out of root-context builds)",
+  )
+
   plan.create(".env.example", envBase(name), "environment example")
 
   plan.create("migrations/0001_init.sql", INIT_SQL, "initial product migration")

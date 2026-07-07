@@ -47,8 +47,22 @@ export function addWorkerApp(plan: Plan, opts: WorkerOptions): void {
     `${dir}/tsconfig.json`,
     JSON.stringify(
       {
-        extends: "../../tsconfig.base.json",
-        compilerOptions: { rootDir: "src", outDir: "dist" },
+        // Self-contained: the worker's Docker build context is the app dir.
+        compilerOptions: {
+          target: "ES2022",
+          module: "commonjs",
+          moduleResolution: "node",
+          lib: ["ES2022"],
+          rootDir: "src",
+          outDir: "dist",
+          strict: true,
+          esModuleInterop: true,
+          skipLibCheck: true,
+          forceConsistentCasingInFileNames: true,
+          resolveJsonModule: true,
+          sourceMap: true,
+          types: ["node"],
+        },
         include: ["src"],
         exclude: ["dist", "node_modules", "src/**/*.test.ts"],
       },
