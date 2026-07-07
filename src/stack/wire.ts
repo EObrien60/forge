@@ -196,7 +196,9 @@ export async function executeStackDeploy(
       }
     }
 
-    await adapter.apply(app.manifest)
+    // Absolute path: lwd resolves a compose app's compose file relative to the
+    // manifest dir, and the daemon (whose cwd isn't the repo) must find it.
+    await adapter.apply(path.resolve(root, app.manifest))
     log.success(`${appName}: applied ${app.manifest}`)
 
     if (!opts.noWait) {

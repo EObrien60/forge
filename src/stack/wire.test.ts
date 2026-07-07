@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import path from "node:path"
 import type { StackManifest } from "./types"
 import type { LwdToml } from "./lwdtoml"
 import type { LwdAdapter } from "./lwd"
@@ -137,10 +138,10 @@ describe("executeStackDeploy — ordering + guards", () => {
     await executeStackDeploy("/x", split, mockAdapter(calls), plan, { noWait: true })
     const applies = calls.filter((c) => c.startsWith("apply:"))
     expect(applies).toEqual([
-      "apply:deploy/db",
-      "apply:deploy/api",
-      "apply:deploy/worker",
-      "apply:deploy/admin",
+      `apply:${path.resolve("/x", "deploy/db")}`,
+      `apply:${path.resolve("/x", "deploy/api")}`,
+      `apply:${path.resolve("/x", "deploy/worker")}`,
+      `apply:${path.resolve("/x", "deploy/admin")}`,
     ])
     expect(calls).toContain("set:golinks-db:POSTGRES_PASSWORD")
   })
