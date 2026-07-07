@@ -174,7 +174,7 @@ async function stackRm(root: string, opts: StackOptions): Promise<void> {
 async function namedVolumes(root: string, manifest: StackManifest): Promise<string[]> {
   const out = new Set<string>()
   for (const app of manifest.apps) {
-    const toml = await readLwdToml(path.join(root, app.manifest))
+    const toml = await readLwdToml(path.join(root, app.manifest, "lwd.toml"))
     for (const svc of toml?.services ?? []) {
       if (svc.volume) {
         const name = svc.volume.split(":")[0]

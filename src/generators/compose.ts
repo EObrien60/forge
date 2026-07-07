@@ -10,6 +10,10 @@ import { computeSecrets } from "./lwd"
  * served. Secrets are passed through as env (lwd injects them into `docker
  * compose up`). The admin is a separate static app (it needs no DB).
  *
+ * Each lwd app lives in its OWN directory as `lwd.toml` — `lwd apply <dir>` reads
+ * `<dir>/lwd.toml`. The compose file sits beside it; its build contexts point up
+ * to the repo root.
+ *
  * Tradeoff: a compose app is pinned to one node — no lwd blue-green / replicas /
  * scheduling for these services. Good enough for a single-box one-command deploy.
  */
@@ -20,24 +24,25 @@ export function addComposeDeployment(plan: Plan, manifest: ForgeManifest, gitUrl
   const appSecrets = computeSecrets(manifest, true) // DATABASE_URL, JWT_SECRET, per-cap secrets
   const composeSecrets = [...new Set([...appSecrets, "POSTGRES_PASSWORD"])]
 
-  plan.create("deploy/docker-compose.yml", composeYaml(name, hasWorker, appSecrets), "compose bundle (db + api + worker, shared network)")
+  plan.create(`deploy/${name}/lwd.toml`, composeManifest(name, composeSecrets), "lwd compose app (fronts the api service)")
+  plan.create(`deploy/${name}/docker-compose.yml`, composeYaml(name, hasWorker, appSecrets), "compose bundle (db + api + worker, shared network)")
   plan.create("docker/migrate.Dockerfile", MIGRATE_DOCKERFILE, "one-shot migration image (runs pnpm migrate on the compose network)")
-  plan.create(`deploy/${name}.lwd.toml`, composeManifest(name, composeSecrets), "lwd compose app (fronts the api service)")
 
-  if (hasAdmin) plan.create("deploy/admin.lwd.toml", adminManifest(name, gitUrl), "lwd manifest: admin (static, separate app)")
+  if (hasAdmin) plan.create("deploy/admin/lwd.toml", adminManifest(name, gitUrl), "lwd manifest: admin (static, separate app)")
 
-  plan.nextStep(`Deploy the whole stack with one command: forge deploy (runs on a box with lwd + this repo).`)
+  plan.nextStep(`Deploy the whole stack with one command: forge deploy (on a box with lwd + this repo).`)
 }
 
 function composeYaml(name: string, hasWorker: boolean, appSecrets: string[]): string {
   // Secrets are passed through by name (no ${} interpolation): lwd sets them in
   // the `docker compose up` environment; `- NAME` forwards them to the container.
+  // Build contexts are relative to this file (deploy/<name>/) → ../../ is the repo root.
   const appEnv = appSecrets.map((s) => `      - ${s}`).join("\n")
   const worker = hasWorker
     ? `
   worker:
     build:
-      context: ../apps/worker
+      context: ../../apps/worker
     restart: unless-stopped
     environment:
       - NODE_ENV=production
@@ -52,6 +57,7 @@ ${appSecrets.map((s) => `      - ${s}`).join("\n")}
     : ""
   return `# One lwd compose app: db + migrate + api${hasWorker ? " + worker" : ""} on a shared
 # network. lwd runs \`docker compose up\` and fronts the api service via Caddy.
+# Build contexts are relative to this file (deploy/${name}/); ../../ is the repo root.
 name: ${name}
 
 services:
@@ -72,7 +78,7 @@ services:
 
   migrate:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/migrate.Dockerfile
     restart: "no"
     environment:
@@ -83,7 +89,7 @@ services:
 
   api:
     build:
-      context: ../apps/api
+      context: ../../apps/api
     restart: unless-stopped
     environment:
       - NODE_ENV=production

@@ -29,23 +29,24 @@ const ROLE_ORDER: Record<AppRole, number> = { resource: 0, api: 1, worker: 2, we
 /** Inspect deploy/*.lwd.toml (+ forge.json) and propose a stack manifest. */
 export async function inferStack(root: string): Promise<StackManifest> {
   const deployDir = path.join(root, "deploy")
-  let files: string[] = []
+  let dirs: string[] = []
   try {
-    files = (await fs.readdir(deployDir)).filter((f) => f.endsWith(".lwd.toml"))
+    const entries = await fs.readdir(deployDir, { withFileTypes: true })
+    dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name)
   } catch {
-    files = []
+    dirs = []
   }
-  if (files.length === 0) throw new Error("no deploy/*.lwd.toml files found — nothing to assemble into a stack")
+  if (dirs.length === 0) throw new Error("no deploy/*/lwd.toml apps found — nothing to assemble into a stack")
 
   const forge = await loadManifest(root)
   const forgeRoles: Record<string, string> = {}
   for (const [name, app] of Object.entries(forge?.apps ?? {})) forgeRoles[name] = app.role
 
   const infos: AppInfo[] = []
-  for (const file of files.sort()) {
-    const toml = await readLwdToml(path.join(deployDir, file))
+  for (const dir of dirs.sort()) {
+    const toml = await readLwdToml(path.join(deployDir, dir, "lwd.toml"))
     if (!toml || !toml.name) continue
-    infos.push({ base: file.replace(/\.lwd\.toml$/, ""), manifestRel: `deploy/${file}`, toml })
+    infos.push({ base: dir, manifestRel: `deploy/${dir}`, toml })
   }
 
   const apps: StackApp[] = infos.map((i) => ({

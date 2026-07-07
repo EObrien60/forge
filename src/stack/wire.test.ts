@@ -9,9 +9,9 @@ function toml(name: string, secrets: string[]): LwdToml {
 }
 
 const APPS_SMALL: StackManifest["apps"] = [
-  { name: "golinks-api", manifest: "deploy/api.lwd.toml", role: "api" },
-  { name: "golinks-worker", manifest: "deploy/worker.lwd.toml", role: "worker" },
-  { name: "golinks-admin", manifest: "deploy/admin.lwd.toml", role: "web" },
+  { name: "golinks-api", manifest: "deploy/api", role: "api" },
+  { name: "golinks-worker", manifest: "deploy/worker", role: "worker" },
+  { name: "golinks-admin", manifest: "deploy/admin", role: "web" },
 ]
 
 const small: StackManifest = {
@@ -60,7 +60,7 @@ describe("planSecrets — derivation + connectivity", () => {
     const split: StackManifest = {
       ...small,
       apps: [
-        { name: "golinks-db", manifest: "deploy/db.lwd.toml", role: "resource" },
+        { name: "golinks-db", manifest: "deploy/db", role: "resource" },
         ...APPS_SMALL,
       ],
       order: ["golinks-db", "golinks-api", "golinks-worker", "golinks-admin"],
@@ -125,7 +125,7 @@ describe("executeStackDeploy — ordering + guards", () => {
     // Use split so nothing is blocked.
     const split: StackManifest = {
       ...small,
-      apps: [{ name: "golinks-db", manifest: "deploy/db.lwd.toml", role: "resource" }, ...APPS_SMALL],
+      apps: [{ name: "golinks-db", manifest: "deploy/db", role: "resource" }, ...APPS_SMALL],
       order: ["golinks-db", "golinks-api", "golinks-worker", "golinks-admin"],
       secrets: {
         generate: { POSTGRES_PASSWORD: { type: "password", bytes: 24, apps: ["golinks-db"] } },
@@ -137,10 +137,10 @@ describe("executeStackDeploy — ordering + guards", () => {
     await executeStackDeploy("/x", split, mockAdapter(calls), plan, { noWait: true })
     const applies = calls.filter((c) => c.startsWith("apply:"))
     expect(applies).toEqual([
-      "apply:deploy/db.lwd.toml",
-      "apply:deploy/api.lwd.toml",
-      "apply:deploy/worker.lwd.toml",
-      "apply:deploy/admin.lwd.toml",
+      "apply:deploy/db",
+      "apply:deploy/api",
+      "apply:deploy/worker",
+      "apply:deploy/admin",
     ])
     expect(calls).toContain("set:golinks-db:POSTGRES_PASSWORD")
   })

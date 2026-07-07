@@ -38,12 +38,16 @@ const FORGE = JSON.stringify({
   apps: { api: { role: "api" }, worker: { role: "worker" }, admin: { role: "web" } },
 })
 
+function appDir(root: string, name: string, content: string): void {
+  mkdirSync(path.join(root, "deploy", name), { recursive: true })
+  writeFileSync(path.join(root, "deploy", name, "lwd.toml"), content)
+}
+
 function fixture(): string {
   const root = mkdtempSync(path.join(os.tmpdir(), "forge-stack-"))
-  mkdirSync(path.join(root, "deploy"))
-  writeFileSync(path.join(root, "deploy", "api.lwd.toml"), API)
-  writeFileSync(path.join(root, "deploy", "worker.lwd.toml"), WORKER)
-  writeFileSync(path.join(root, "deploy", "admin.lwd.toml"), ADMIN)
+  appDir(root, "api", API)
+  appDir(root, "worker", WORKER)
+  appDir(root, "admin", ADMIN)
   writeFileSync(path.join(root, "forge.json"), FORGE)
   return root
 }

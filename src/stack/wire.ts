@@ -134,7 +134,7 @@ export async function computeStackDeploy(
   const existingByApp: Record<string, string[]> = {}
   for (const app of manifest.apps) {
     if (opts.onlyApp && app.name !== opts.onlyApp) continue
-    const toml = await readLwdToml(path.join(root, app.manifest))
+    const toml = await readLwdToml(path.join(root, app.manifest, "lwd.toml"))
     if (toml) tomlByApp[app.name] = toml
     existingByApp[app.name] = await adapter.secretLs(app.name)
   }

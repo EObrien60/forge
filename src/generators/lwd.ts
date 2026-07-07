@@ -42,21 +42,22 @@ export function addLwdManifests(plan: Plan, manifest: ForgeManifest): void {
     return
   }
 
+  // Each lwd app is its own directory with `lwd.toml` inside (lwd apply <dir>).
   if (hasApi) {
-    plan.create(`deploy/api.lwd.toml`, apiManifest(name, topology, secrets, gitUrl), "lwd manifest: API surface")
+    plan.create(`deploy/api/lwd.toml`, apiManifest(name, topology, secrets, gitUrl), "lwd manifest: API surface")
   }
   if (hasAdmin) {
-    plan.create(`deploy/admin.lwd.toml`, adminManifest(name, gitUrl), "lwd manifest: admin frontend")
+    plan.create(`deploy/admin/lwd.toml`, adminManifest(name, gitUrl), "lwd manifest: admin frontend")
   }
   if (hasWorker) {
-    plan.create(`deploy/worker.lwd.toml`, workerManifest(name, secrets.filter((s) => s === "DATABASE_URL"), gitUrl), "lwd manifest: worker surface")
+    plan.create(`deploy/worker/lwd.toml`, workerManifest(name, secrets.filter((s) => s === "DATABASE_URL"), gitUrl), "lwd manifest: worker surface")
   }
   if (topology === "split") {
-    plan.create(`deploy/db.lwd.toml`, dbManifest(name), "lwd manifest: dedicated Postgres")
+    plan.create(`deploy/db/lwd.toml`, dbManifest(name), "lwd manifest: dedicated Postgres")
   }
 
   if (!manifest.deploy.repo) {
-    plan.nextStep(`No git repo known — set the [git].url in deploy/*.lwd.toml before deploying.`)
+    plan.nextStep(`No git repo known — set [git].url in each deploy/*/lwd.toml before deploying.`)
   }
   plan.nextStep(`Set secret values: lwd secret set ${name}-api ${secrets.join(" ")}`)
 }
