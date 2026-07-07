@@ -83,10 +83,10 @@ export const RECIPES: Record<RecipeName, Recipe> = {
   },
   "platform-package": {
     name: "platform-package",
-    describe: "OBH primitive-style package (deferred in v1)",
+    describe: "OBH primitive-style package — use `forge new package <name>`",
     shape: () => ({ apps: [], packages: [], autoPrimitives: [] }),
     generate: () => {
-      throw new Error("The platform-package recipe is not implemented yet.")
+      throw new Error("Platform packages are scaffolded with `forge new package <name>`, not a recipe.")
     },
   },
 }

@@ -24,20 +24,22 @@ program
 withFlags(
   program
     .command("new <kind> [name]")
-    .description("scaffold a new project (kind: app)")
+    .description("scaffold a new project (kind: app | package)")
     .option("--recipe <recipe>", "full-saas | api-web-worker | api-only | worker")
-    .option("--scope <scope>", "npm scope for internal packages (default @<name>)")
+    .option("--scope <scope>", "npm scope for internal packages (default @<name>; @obh for packages)")
     .option("--topology <topology>", "small | split")
     .option("--api-framework <framework>", "hono | express")
     .option("--no-example", "skip the notes example domain (bare health-only app)")
     .option("--no-sdk", "skip the shared SDK package")
+    .option("--mobile [name]", "include an Expo mobile app (default name: mobile)")
+    .option("--daemon", "for `new package`: also generate an admin/worker daemon")
     .option("--repo <owner/repo>", "GitHub repo for deploy manifests (else auto-detected)"),
 ).action((kind: string, name: string | undefined, opts: Record<string, unknown>) => newCommand(kind, name, opts))
 
 withFlags(
   program
     .command("add <target> [name]")
-    .description("add a primitive (events|jobs|files|audit|settings|api-keys|webhooks|import-export|entitlements|search|analytics|notifications) or app (api|web|worker|sdk)"),
+    .description("add a primitive (events|jobs|files|audit|settings|api-keys|webhooks|import-export|entitlements|search|analytics|notifications) or app (api|web|worker|sdk|mobile)"),
 ).action((target: string, name: string | undefined, opts: Record<string, unknown>) => addCommand(target, name, opts))
 
 program.command("inspect").description("report project shape and detected conventions").action(() => inspectCommand())

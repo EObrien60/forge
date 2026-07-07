@@ -6,10 +6,11 @@ import { addApiApp } from "../generators/api"
 import { addWorkerApp } from "../generators/worker"
 import { addSdkPackage } from "../generators/sdk"
 import { addWebApp } from "../generators/web"
+import { addMobileApp } from "../generators/mobile"
 import { log } from "../utils/logger"
 import { flagsFrom, runPlan } from "./shared"
 
-const APP_KINDS = ["api", "web", "worker", "sdk"] as const
+const APP_KINDS = ["api", "web", "worker", "sdk", "mobile"] as const
 
 /** `forge add <capability|api|web|worker|sdk> [name]` */
 export async function addCommand(target: string, name: string | undefined, opts: Record<string, unknown>): Promise<void> {
@@ -40,25 +41,32 @@ export async function addCommand(target: string, name: string | undefined, opts:
 }
 
 function addAppKind(ctx: ProjectContext, plan: Plan, kind: string, name: string | undefined, scope: string): void {
+  const config = ctx.requireManifest().config
   switch (kind) {
     case "api":
-      addApiApp(plan, { scope })
-      plan.patchManifest({ apps: { api: { name: "api", path: "apps/api", framework: "hono", role: "api" } } })
+      addApiApp(plan, { scope, framework: config.apiFramework, example: config.example })
+      plan.patchManifest({ apps: { api: { name: "api", path: "apps/api", framework: config.apiFramework, role: "api" } } })
       break
     case "worker":
       addWorkerApp(plan, { scope })
       plan.patchManifest({ apps: { worker: { name: "worker", path: "apps/worker", role: "worker" } } })
       break
     case "sdk":
-      addSdkPackage(plan, { scope })
+      addSdkPackage(plan, { scope, example: config.example })
       plan.patchManifest({ packages: { sdk: { name: "sdk", path: "packages/sdk" } } })
       break
     case "web": {
       const appName = name ?? "admin"
-      addWebApp(plan, { scope, name: appName })
+      addWebApp(plan, { scope, name: appName, example: config.example })
       plan.patchManifest({
         apps: { [appName]: { name: appName, path: `apps/${appName}`, framework: "vite-react", role: "web" } },
       })
+      break
+    }
+    case "mobile": {
+      const appName = name ?? "mobile"
+      addMobileApp(plan, { scope, name: appName, example: config.example })
+      plan.patchManifest({ apps: { [appName]: { name: appName, path: `apps/${appName}`, role: "mobile" } } })
       break
     }
   }

@@ -10,6 +10,8 @@ export interface NewAnswers {
   apiFramework: ApiFramework
   example: ExampleDomain
   sdk: boolean
+  /** Mobile app directory name, or null for none. */
+  mobile: string | null
   primitives: CapabilityName[]
 }
 
@@ -60,6 +62,12 @@ export async function askNew(defaults: Partial<NewAnswers> & { sdk?: boolean }):
         initial: true,
       },
       {
+        type: defaults.mobile !== undefined ? null : "confirm",
+        name: "mobileOn",
+        message: "Include a mobile app (Expo)?",
+        initial: false,
+      },
+      {
         type: defaults.topology ? null : "select",
         name: "topology",
         message: "Deployment topology",
@@ -89,6 +97,7 @@ export async function askNew(defaults: Partial<NewAnswers> & { sdk?: boolean }):
     apiFramework: (defaults.apiFramework ?? res.apiFramework) as ApiFramework,
     example: defaults.example !== undefined ? defaults.example : res.exampleOn ? "notes" : null,
     sdk: defaults.sdk ?? true,
+    mobile: defaults.mobile !== undefined ? defaults.mobile : res.mobileOn ? "mobile" : null,
     primitives: ((res.primitives as CapabilityName[]) ?? []).filter(isImplemented),
   }
 }

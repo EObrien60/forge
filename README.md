@@ -28,8 +28,9 @@ pnpm install && pnpm build && node dist/cli.js --help
 
 | Command | What it does |
 |---|---|
-| `forge new app <name>` | Scaffold a new project. Recipes: `full-saas`, `api-web-worker`, `api-only`, `worker`. Flags: `--api-framework hono\|express`, `--no-example`, `--no-sdk`, `--topology small\|split`, `--repo owner/repo`, `--scope`. |
-| `forge add <target>` | Add an app (`api`/`web`/`worker`/`sdk`) or a primitive — `events`, `jobs`, `files`, `audit`, `settings`, `api-keys`, `webhooks`, `import-export`, `entitlements`, `search`, `analytics`, `notifications`. Prerequisites resolve automatically. |
+| `forge new app <name>` | Scaffold a new project. Recipes: `full-saas`, `api-web-worker`, `api-only`, `worker`. Flags: `--api-framework hono\|express`, `--no-example`, `--no-sdk`, `--mobile [name]`, `--topology small\|split`, `--repo owner/repo`, `--scope`. |
+| `forge new package <name>` | Scaffold an OBH platform-primitive repo (the qtool template: `@obh/<name>`, kernel helpers, record-store client, migrations, CI). `--daemon` adds an admin/worker app. |
+| `forge add <target>` | Add an app (`api`/`web`/`worker`/`sdk`/`mobile`) or a primitive — `events`, `jobs`, `files`, `audit`, `settings`, `api-keys`, `webhooks`, `import-export`, `entitlements`, `search`, `analytics`, `notifications`. Prerequisites resolve automatically. |
 | `forge inspect` | Report project shape and detected conventions. |
 | `forge doctor` | Check the project against OBH conventions (reports only). |
 | `forge generate <artifact>` | Regenerate `lwd`, `ci`, or `env`. |
@@ -51,6 +52,9 @@ A real, working vertical slice — not stubs:
   from `src/consumers.d/*`.
 - **`packages/sdk`** — the one typed contract (types + client) shared by the API
   and every frontend.
+- **`apps/mobile`** (with `--mobile`) — an Expo React Native app driving the same
+  SDK; the notes screen works end-to-end. Ships via EAS, so it gets no lwd
+  manifest.
 - **`deploy/*.lwd.toml`**, per-app **Dockerfiles**, **CI** (with Postgres),
   a **migration runner**, `.env.example`, `forge.json`.
 
@@ -102,8 +106,7 @@ interpretive work (reading a repo, proposing event names, mapping legacy code).
 
 ## Deferred
 
-Mobile (Expo) scaffolding, the `platform-package` recipe, AST-level patching, and
-an upgrade/reconcile mode.
+AST-level patching and an upgrade/reconcile mode.
 
 ## Development
 

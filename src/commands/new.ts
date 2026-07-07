@@ -6,8 +6,10 @@ import { newManifest } from "../project/manifest"
 import { getRecipe, type RecipeInput } from "../recipes"
 import { getCapability, resolveOrder } from "../capabilities"
 import { addLwdManifests } from "../generators/lwd"
+import { addMobileApp } from "../generators/mobile"
+import { addPlatformPackageProject } from "../generators/platform-package"
 import { detectGitRepo } from "../utils/git"
-import { askNew, askRepo, type NewAnswers } from "../prompts"
+import { askNew, askRepo, confirm, type NewAnswers } from "../prompts"
 import { log } from "../utils/logger"
 import { flagsFrom, runPlan } from "./shared"
 
@@ -18,16 +20,19 @@ interface NewOptions {
   apiFramework?: string
   example?: boolean
   sdk?: boolean
+  mobile?: string | boolean
+  daemon?: boolean
   repo?: string
   yes?: boolean
   dryRun?: boolean
   force?: boolean
 }
 
-/** `forge new app <name>` — scaffold a new project directory. */
+/** `forge new <app|package> [name]` — scaffold a new project directory. */
 export async function newCommand(kind: string, name: string | undefined, opts: NewOptions): Promise<void> {
+  if (kind === "package") return newPackageCommand(name, opts)
   if (kind !== "app") {
-    log.error(`\`forge new ${kind}\` is not supported yet. Use \`forge new app <name>\`.`)
+    log.error(`\`forge new ${kind}\` is not supported. Use \`forge new app <name>\` or \`forge new package <name>\`.`)
     process.exitCode = 1
     return
   }
@@ -49,18 +54,23 @@ export async function newCommand(kind: string, name: string | undefined, opts: N
   const requested = [...new Set([...shape.autoPrimitives, ...answers.primitives])]
   const primitives = resolveOrder(requested)
 
-  const manifest = buildManifest(answers, repo, shape.apps, shape.packages, primitives)
+  const mobileApp: AppRecord | null = answers.mobile
+    ? { name: answers.mobile, path: `apps/${answers.mobile}`, role: "mobile" }
+    : null
+  const allApps = mobileApp ? [...shape.apps, mobileApp] : shape.apps
+
+  const manifest = buildManifest(answers, repo, allApps, shape.packages, primitives)
 
   const plan = new Plan()
   recipe.generate(plan, input, shape)
+  if (mobileApp) addMobileApp(plan, { scope: answers.scope, name: mobileApp.name, example: answers.example })
   plan.create("forge.json", JSON.stringify(manifest, null, 2) + "\n", "forge project manifest")
 
-  // Apply capabilities against a synthetic context describing the new project.
   const ctx = new ProjectContext(
     ".",
     manifest,
     undefined,
-    shape.apps.map((a) => a.name),
+    allApps.map((a) => a.name),
     shape.packages.map((p) => p.name),
   )
   for (const capName of primitives) {
@@ -71,7 +81,8 @@ export async function newCommand(kind: string, name: string | undefined, opts: N
   addLwdManifests(plan, manifest)
 
   const root = path.resolve(process.cwd(), answers.name)
-  log.info(`Scaffolding "${answers.name}" (${recipe.name}, ${answers.apiFramework}${answers.example ? ", notes example" : ""}) into ${root}`)
+  const extras = [answers.apiFramework, answers.example ? "notes" : null, mobileApp ? "mobile" : null].filter(Boolean).join(", ")
+  log.info(`Scaffolding "${answers.name}" (${recipe.name}, ${extras}) into ${root}`)
   await runPlan(root, plan, flagsFrom(opts))
 
   if (!opts.dryRun) {
@@ -79,10 +90,35 @@ export async function newCommand(kind: string, name: string | undefined, opts: N
   }
 }
 
+/** `forge new package <name>` — scaffold an OBH platform primitive repo. */
+async function newPackageCommand(name: string | undefined, opts: NewOptions): Promise<void> {
+  if (!name) {
+    log.error("Usage: forge new package <name>")
+    process.exitCode = 1
+    return
+  }
+  const scope = opts.scope ?? "@obh"
+  const daemon = opts.daemon !== undefined ? Boolean(opts.daemon) : opts.yes ? true : await confirm("Include an admin/worker daemon (apps/<name>d)?")
+
+  const plan = new Plan()
+  addPlatformPackageProject(plan, { name, scope, daemon })
+
+  const manifest = newManifest(name, new Date().toISOString(), { topology: "small", sdk: false, example: null })
+  manifest.packages[name] = { name, path: `packages/${name}` }
+  if (daemon) manifest.apps[`${name}d`] = { name: `${name}d`, path: `apps/${name}d`, role: "worker" }
+  plan.create("forge.json", JSON.stringify(manifest, null, 2) + "\n", "forge project manifest")
+
+  const root = path.resolve(process.cwd(), name)
+  log.info(`Scaffolding platform package "${scope}/${name}"${daemon ? " + daemon" : ""} into ${root}`)
+  await runPlan(root, plan, flagsFrom(opts))
+  if (!opts.dryRun) log.success(`Done. Next: cd ${name} && pnpm install && pnpm build`)
+}
+
 async function resolveAnswers(name: string | undefined, opts: NewOptions): Promise<NewAnswers> {
   const apiFramework = opts.apiFramework as ApiFramework | undefined
   const forcedExample: ExampleDomain | undefined = opts.example === false ? null : undefined
   const sdk = opts.sdk !== false
+  const mobileFromFlag = opts.mobile === true ? "mobile" : typeof opts.mobile === "string" ? opts.mobile : undefined
 
   if (opts.yes && name) {
     return {
@@ -93,6 +129,7 @@ async function resolveAnswers(name: string | undefined, opts: NewOptions): Promi
       apiFramework: apiFramework ?? "hono",
       example: opts.example === false ? null : "notes",
       sdk,
+      mobile: mobileFromFlag ?? null,
       primitives: [],
     }
   }
@@ -105,6 +142,7 @@ async function resolveAnswers(name: string | undefined, opts: NewOptions): Promi
     apiFramework,
     example: forcedExample,
     sdk,
+    mobile: mobileFromFlag,
   })
 }
 
