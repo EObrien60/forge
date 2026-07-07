@@ -7,6 +7,7 @@ import { inspectCommand } from "./commands/inspect"
 import { doctorCommand } from "./commands/doctor"
 import { generateCommand } from "./commands/generate"
 import { skillCommand } from "./commands/skill"
+import { stackCommand } from "./commands/stack"
 
 function withFlags(cmd: Command): Command {
   return cmd
@@ -53,6 +54,26 @@ withFlags(
 withFlags(
   program.command("skill <action> [name]").description("manage OBH Claude skills (list | install <name>)"),
 ).action((action: string, name: string | undefined, opts: Record<string, unknown>) => skillCommand(action, name, opts))
+
+// Repo → lwd delivery. `forge deploy` is an alias for `forge stack deploy`.
+function stackFlags(cmd: Command): Command {
+  return withFlags(cmd)
+    .option("--rotate <keys>", "regenerate secret(s) (comma-separated) and re-derive connections")
+    .option("--app <name>", "limit to one app")
+    .option("--no-wait", "don't gate on health between apps")
+    .option("--destroy-data", "for rm: attempt to remove named data volumes (lwd preserves them)")
+}
+function mapStack(opts: Record<string, unknown>): Record<string, unknown> {
+  return { ...opts, noWait: opts.wait === false }
+}
+
+stackFlags(
+  program.command("stack <action>").description("repo → lwd delivery (init | deploy | status | rm)"),
+).action((action: string, opts: Record<string, unknown>) => stackCommand(action, mapStack(opts)))
+
+stackFlags(program.command("deploy").description("alias for `forge stack deploy`")).action(
+  (opts: Record<string, unknown>) => stackCommand("deploy", mapStack(opts)),
+)
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   console.error(err instanceof Error ? err.message : String(err))

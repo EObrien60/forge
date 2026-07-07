@@ -25,6 +25,7 @@ export function abs(root: string, relative: string): string {
 
 export const paths = {
   forgeManifest: "forge.json",
+  stackManifest: "deploy/stack.json",
   rootPackageJson: "package.json",
   pnpmWorkspace: "pnpm-workspace.yaml",
   tsconfigBase: "tsconfig.base.json",

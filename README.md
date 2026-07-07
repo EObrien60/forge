@@ -35,8 +35,34 @@ pnpm install && pnpm build && node dist/cli.js --help
 | `forge doctor` | Check the project against OBH conventions (reports only). |
 | `forge generate <artifact>` | Regenerate `lwd`, `ci`, or `env`. |
 | `forge skill <list\|install>` | List or install the bundled OBH Claude skills. |
+| `forge stack <init\|deploy\|status\|rm>` | Deliver the repo to lwd: assemble the apps into one stack, generate + wire secret values, and apply in order. `forge deploy` is an alias for `forge stack deploy`. |
 
 Every mutating command supports `--dry-run`, `--yes`, and `--force`.
+
+## Deploying a stack (`forge stack`)
+
+`forge new` generates per-app `deploy/*.lwd.toml` with **secret names only**.
+`forge stack` closes the gap to a running deployment — as a pure client of the
+`lwd` CLI (zero lwd changes):
+
+```bash
+forge stack init          # inspect deploy/*.lwd.toml → write a reviewable deploy/stack.json
+#                           (groups the apps, proposes generated + derived secrets)
+# review deploy/stack.json
+forge stack deploy         # (alias: forge deploy) generate secret VALUES, wire connections,
+#                           lwd secret set + lwd apply each app in dependency order
+forge stack status         # rolled-up lwd status across the stack
+forge stack rm             # tear down in reverse order (named data volumes preserved)
+```
+
+`deploy` **generates** the random secrets (`POSTGRES_PASSWORD`, `JWT_SECRET`,
+`API_KEYS_PEPPER`), **derives** connection strings (`DATABASE_URL` from the
+Postgres backing service), **orders** the multi-app apply, and is **idempotent**
+(lwd is the sole secret store — already-set secrets are skipped, never rotated
+silently; `--dry-run` masks all values). It **honestly flags** lwd's per-app
+network isolation: a worker that can't reach a Postgres co-located in the API is
+reported (fix by moving to split topology), never wired with a broken value.
+`--rotate <KEY>` regenerates a secret and re-derives everything built from it.
 
 ## What you get from `forge new`
 
