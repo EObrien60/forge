@@ -8,7 +8,7 @@ export interface GlobalFlags {
   force: boolean
 }
 
-export function flagsFrom(opts: Record<string, unknown>): GlobalFlags {
+export function flagsFrom(opts: { dryRun?: unknown; yes?: unknown; force?: unknown }): GlobalFlags {
   return {
     dryRun: Boolean(opts.dryRun),
     yes: Boolean(opts.yes),

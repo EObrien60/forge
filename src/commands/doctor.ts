@@ -46,9 +46,10 @@ export async function doctorCommand(): Promise<void> {
   checks.push({ label: ".env.example", status: (await has(".env.example")) ? "pass" : "warn" })
   checks.push({ label: "migration runner", status: (await has("scripts/migrate.ts")) ? "pass" : "fail", hint: "scripts/migrate.ts" })
 
-  // lwd manifests for each app.
+  // lwd manifests for each deployable app (mobile ships via EAS, not lwd).
   for (const dir of ctx.appDirs) {
     const role = ctx.manifest?.apps[dir]?.role
+    if (role === "mobile") continue
     const file = role === "web" ? "admin" : dir
     checks.push({
       label: `lwd manifest for ${dir}`,
