@@ -137,8 +137,11 @@ function apiTs(scope: string, example: ExampleDomain): string {
   return `import { createClient } from "${scope}/sdk"
 ${typeReexport}
 
+// \`||\` (not \`??\`): an empty VITE_API_BASE_URL must fall back, never win — a "" here
+// produces a relative /api/... against the admin's own origin. Set VITE_API_BASE_URL
+// (apps/admin/.env.production) to the API's public URL for production builds.
 export const api = createClient({
-  baseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080",
+  baseUrl: import.meta.env.VITE_API_BASE_URL || "http://localhost:8080",
   token: () => localStorage.getItem("token"),
 })
 `
@@ -232,8 +235,7 @@ WORKDIR /repo
 RUN npm install -g pnpm@9
 COPY . .
 RUN pnpm install --no-frozen-lockfile
-ARG VITE_API_BASE_URL
-ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+# VITE_API_BASE_URL is read from apps/admin/.env.production at build time.
 # "..." builds the workspace SDK (a dependency) before Vite bundles the admin.
 RUN pnpm --filter "${pkgName}..." build
 

@@ -83,7 +83,9 @@ export function addProjectSkeleton(plan: Plan, opts: SkeletonOptions): void {
 
   plan.create(
     ".dockerignore",
-    ["node_modules", "**/node_modules", "dist", "**/dist", ".git", "coverage", "*.log", ".env", ".env.local", ""].join("\n"),
+    // NB: no .env* here — apps/admin/.env.production must reach the build context
+    // (real .env/.env.local are gitignored, so absent from git-app build clones anyway).
+    ["node_modules", "**/node_modules", "dist", "**/dist", ".git", "coverage", "*.log", ""].join("\n"),
     "dockerignore (keeps node_modules/.git out of root-context builds)",
   )
 
