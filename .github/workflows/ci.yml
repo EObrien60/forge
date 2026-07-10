@@ -16,10 +16,11 @@ jobs:
       # too makes pnpm/action-setup@v4 error on the duplicate.
       - uses: pnpm/action-setup@v4
 
+      # No pnpm-lock.yaml is committed (see the install step), so pnpm caching
+      # can't key off a lockfile — leave it off.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
 
       # No lockfile is committed, so don't require a frozen one.
       - run: pnpm install --no-frozen-lockfile
