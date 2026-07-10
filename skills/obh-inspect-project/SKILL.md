@@ -1,11 +1,11 @@
 ---
 name: obh-inspect-project
-description: Use when you need to understand an unfamiliar or pre-Forge codebase before changing it. Reads the repo and reports project shape, DB and deploy patterns, which OBH platform primitives are present vs. candidates, risks, and a recommended `forge add` sequence.
+description: Use to assess an unfamiliar or pre-Forge codebase before retrofitting it. The read-only top of the retrofit family — reports project shape, DB and deploy patterns, which OBH primitives are present vs. candidates, risks, and a recommended `forge add` sequence, then points at the per-primitive retrofit skills. Makes no changes.
 ---
 
-Purpose: build an accurate map of a repository so subsequent Forge/retrofit work is grounded in what actually exists, not assumptions. This skill only reads and reports — it makes no changes.
+Purpose: build an accurate map of a repository so subsequent Forge/retrofit work is grounded in what actually exists, not assumptions. This is the top-level **assessment** skill: it only reads and reports, and it hands off to the per-primitive retrofit skills (each of which has its own read-only assessment before any implementation).
 
-## Workflow
+## Assessment (read-only)
 
 1. **Detect project shape.** Look for `forge.json` first — if present, read the recorded apps, packages, installed primitives, and topology; the repo is already Forge-managed. Otherwise infer: check for `pnpm-workspace.yaml` + `apps/*` + `packages/*` (Forge-style monorepo) vs. a single-package app. List every app and package with its role (api, admin, worker, mobile, sdk, ui, config).
 
@@ -15,12 +15,12 @@ Purpose: build an accurate map of a repository so subsequent Forge/retrofit work
 
 4. **Map deployment.** Look for `deploy/*.lwd.toml` (Forge/lwd), `Dockerfile`, `docker-compose.yml`, `vercel.json`, `fly.toml`, k8s manifests, CI workflows. Note where secrets live (committed `.env`, CI secrets, lwd secret names).
 
-5. **Census platform primitives.** For each OBH primitive (events, jobs, files, audit, settings, api-keys, webhooks, import-export, entitlements, search, analytics, notifications), decide **present** (an `@obh/*` dep or a `scripts/migrations.d/*` entry) vs. **candidate** (hand-rolled equivalent exists — e.g. a homegrown outbox table, a cron route, multer uploads, a `settings`/`options` table). Cite the file that triggered each candidate.
+5. **Census platform primitives.** For each OBH primitive (events, jobs, files, audit, settings, api-keys, webhooks, import-export, entitlements, search, analytics, notifications), decide **present** (an `@obh/*` dep or a `scripts/migrations.d/*` entry) vs. **candidate** (hand-rolled equivalent exists — e.g. a homegrown outbox table, a cron route, multer uploads, a `settings`/`options` table). Cite the file that triggered each candidate, and name the retrofit skill that handles it (e.g. multer → obh-retrofit-files, `nodemailer` → obh-retrofit-notifications).
 
 6. **Flag risks.** Watch for: ORM auto-sync/`synchronize: true` (schema drift, no reviewable migrations); missing migrations directory; no `/health` or readiness endpoint; duplicated types between backend and frontend(s); committed secrets; missing event seam (writes with no facts emitted); a worker surface mixed into the API process.
 
-7. **Recommend a `forge add` sequence.** Order by dependency: `events` first (most primitives react to events), then the primitives that consume them (`audit`, `analytics`, `notifications`, `search`), then independent ones (`files`, `jobs`, `settings`, `api-keys`, `webhooks`, `import-export`, `entitlements`). Only recommend primitives justified by a real candidate. Suggest `forge inspect` and `forge doctor` to validate before mutating, and note every mutating command supports `--dry-run`.
+7. **Recommend a `forge add` sequence.** Order by dependency: `events` first (most primitives react to events), then the primitives that consume them (`audit`, `analytics`, `notifications`, `search`), then independent ones (`files`, `jobs`, `settings`, `api-keys`, `webhooks`, `import-export`, `entitlements`). Only recommend primitives justified by a real candidate. Point each recommended step at its retrofit skill for the deep assessment. Suggest `forge inspect` and `forge doctor` to validate before mutating, and note every mutating command supports `--dry-run`.
 
 ## Output
 
-A concise report with sections: **Shape** (apps/packages + package manager), **Data** (DB access + migration strategy + schemas), **Deploy** (surfaces + secrets), **Primitives** (present vs. candidate table, each candidate citing a file), **Risks** (ranked), and **Recommended sequence** (an ordered list of `forge add <primitive>` commands with a one-line reason each, prefixed with a `forge doctor` / `--dry-run` note). No code changes.
+A concise report with sections: **Shape** (apps/packages + package manager), **Data** (DB access + migration strategy + schemas), **Deploy** (surfaces + secrets), **Primitives** (present vs. candidate table, each candidate citing a file and its retrofit skill), **Risks** (ranked), and **Recommended sequence** (an ordered list of `forge add <primitive>` commands, each with a one-line reason and the retrofit skill to run next, prefixed with a `forge doctor` / `--dry-run` note). No code changes — this skill is assessment-only; the per-primitive retrofit skills carry out the work.
