@@ -132,11 +132,18 @@ skills — not a desired-state contract.
 
 ## Claude skills
 
-Bundled under `skills/` and installable per-project with `forge skill install`:
-`obh-inspect-project`, `obh-add-events`, `obh-retrofit-jobs`, `obh-retrofit-files`,
-`obh-generate-audit-rules`, `obh-settings-migration`, `obh-lwd-manifest`,
-`obh-sdk-extraction`. Forge does the mechanical file work; the skills do the
-interpretive work (reading a repo, proposing event names, mapping legacy code).
+Bundled under `skills/` and installable per-project with `forge skill install`.
+Forge does the mechanical file work; the skills do the interpretive work —
+reading a repo, proposing event names, mapping legacy code onto a primitive.
+
+Every skill is **dual-mode**: an **Assessment (read-only)** phase that surveys the
+codebase and emits a plan (a valid stopping point — no mutations), and an
+**Implementation** phase, run only on request, that installs and wires the change.
+So the whole set doubles as a retrofit audit before you commit to anything.
+
+- `obh-inspect-project` — read-only census; the top of the retrofit family, points at the skill for each candidate primitive.
+- **Primitive retrofits** (one per `@obh/*` primitive): `obh-add-events`, `obh-generate-audit-rules`, `obh-retrofit-jobs`, `obh-retrofit-files`, `obh-settings-migration`, `obh-retrofit-api-keys`, `obh-retrofit-webhooks`, `obh-retrofit-import-export`, `obh-retrofit-entitlements`, `obh-retrofit-search`, `obh-retrofit-analytics`, `obh-retrofit-notifications`.
+- **Structural**: `obh-sdk-extraction` (dedupe types/client into `packages/sdk`), `obh-lwd-manifest` (deploy manifests).
 
 ## Deferred
 

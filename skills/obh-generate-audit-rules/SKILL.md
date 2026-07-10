@@ -1,11 +1,11 @@
 ---
 name: obh-generate-audit-rules
-description: Use when a project has domain events and needs an immutable audit trail. Generates @obh/audit rule mappings (event -> action/target/actor) covering create/update/delete/state-change events, with redaction and immutability notes.
+description: Use to assess or build an immutable audit trail from a project's domain events with @obh/audit. Maps each event to an audit record (action/target/actor) with redaction and immutability notes (assessment); then installs and wires the rules (implementation). Assessment-only by default; implements on request.
 ---
 
 Purpose: turn existing domain **events** (facts) into an **audit** trail. The audit primitive derives an immutable log from events — each rule maps one event to an audit record's action, target, and actor. Audit does not observe the DB directly; it reacts to events, so this skill depends on an event catalogue already existing (see obh-add-events).
 
-## Workflow
+## Assessment (read-only)
 
 1. **Collect the events.** Read the project's event definitions (from `@obh/events` `defineX` files / the catalogue). List every event name, its payload, and what state change it represents. If no events exist yet, stop and run obh-add-events first — there is nothing for audit to observe.
 
@@ -19,8 +19,12 @@ Purpose: turn existing domain **events** (facts) into an **audit** trail. The au
 
 4. **Plan redaction.** Mark payload fields that must not land in the immutable log: secrets, tokens, full PII, large blobs. Specify per-rule redaction (drop or hash) before the audit record is written — remember records are immutable, so a leak can't be edited out later.
 
-5. **Install and wire.** Run `forge add audit` (`--dry-run` first). This adds the audit migration to `scripts/migrations.d/*` and the `@obh/audit` client. Run `pnpm migrate`. Register the rules against the event bus/subscribers (`apps/api/src/bus.d/*` or the audit worker consumer) so each event produces its audit record. Audit writes are append-only — never expose update/delete on them.
+Produces the **audit rule map**. Nothing above mutates the repo — a valid stopping point when you only need the survey.
+
+## Implementation (only after the rule map is agreed)
+
+5. **Install and wire.** Run `forge add audit` (`--dry-run` first). This adds the audit migration to `scripts/migrations.d/*` and the `@obh/audit` client. Run `pnpm migrate`. Register the rules against the event bus/subscribers (`apps/api/src/bus.d/*` or the audit worker consumer) so each event produces its audit record, applying the redaction from step 4 **before** write. Audit writes are append-only — never expose update/delete on them. Then `forge doctor`.
 
 ## Output
 
-An **audit rule map**: a table of `event.name` → `action` → target (type+id source) → actor (source) → captured metadata/diff → redacted fields, plus an **excluded events** list with reasons; the `forge add audit` + `pnpm migrate` steps; where rules are registered; and an explicit immutability/redaction note (records are append-only; redact before write).
+**Assessment →** the audit rule map: a table of `event.name` → `action` → target (type+id source) → actor (source) → captured metadata/diff → redacted fields, plus an **excluded events** list with reasons and an explicit immutability/redaction note (records are append-only; redact before write). **Implementation →** the `forge add audit` + `pnpm migrate` steps and where each rule is registered.

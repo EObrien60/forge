@@ -1,11 +1,11 @@
 ---
 name: obh-lwd-manifest
-description: Use when generating or updating lwd deploy manifests for a Forge project. Encodes real lwd constraints — worker as a separate surface, no co-located Postgres on a replicated API, per-app network isolation, secret NAMES only — and prefers `forge generate lwd` over hand-editing.
+description: Use to assess or generate lwd deploy manifests for a Forge project. Reads topology and works out correct surface types, the Postgres co-location rule, network isolation, and secret NAMES (assessment); then runs `forge generate lwd` and applies the few hand-edits the generator can't infer (implementation). Assessment-only by default; generates on request.
 ---
 
 Purpose: produce correct `deploy/*.lwd.toml` manifests that match the app topology. Prefer generating them with Forge; hand-edit only for constraints the generator can't infer. lwd manifests reference secret **NAMES** only — values are set out-of-band with `lwd secret set`.
 
-## Workflow
+## Assessment (read-only)
 
 1. **Read the topology.** From `forge.json` and `apps/*`, list the deployable surfaces: api, admin/web, worker. Note replica intent (is the API meant to scale, `replicas > 1`?) and whether a database is expected to be managed by lwd or external.
 
@@ -15,12 +15,16 @@ Purpose: produce correct `deploy/*.lwd.toml` manifests that match the app topolo
 
 4. **Isolate networks per app.** Give each app its own network scope; don't share a network across surfaces beyond what they must reach. The worker and API connect to the same database but are otherwise isolated.
 
-5. **Reference secret NAMES only.** List required secrets by NAME (DB URL, S3/files keys, API-key signing secret, webhook signing secret, SMTP for notifications). Never put values in the toml. Add a note that each is provisioned with `lwd secret set <NAME>` per environment.
+5. **List secret NAMES only.** Enumerate required secrets by NAME (DB URL, S3/files keys, API-key signing secret, webhook signing secret, SMTP for notifications). Never put values in the toml. Note that each is provisioned with `lwd secret set <NAME>` per environment.
 
 6. **Choose small vs. split topology.** **Small**: api + worker + co-located Postgres, single replicas — fine for dev/low volume. **Split**: replicated API (external DB) + independent worker + managed Postgres — for production scale. Pick based on the replica intent from step 1.
+
+Produces the **manifest plan** (intended surfaces, types, co-location decision, secret NAMES, small-vs-split recommendation). Nothing above writes any file — a valid stopping point when you only need the survey.
+
+## Implementation (only after the plan is agreed)
 
 7. **Generate, then review.** Run `forge generate lwd` (`--dry-run` first) to emit/update the manifests from `forge.json`. Hand-edit only for things the generator can't know: replica counts, external-DB endpoints, worker health specifics, network scoping. Re-run `forge doctor` to validate.
 
 ## Output
 
-The `deploy/*.lwd.toml` manifests (one per surface) with correct types, health checks, network isolation, and secret NAMES; the `forge generate lwd` command used (with `--dry-run`); a short topology recommendation (small vs. split) tied to replica intent; a list of secrets to `lwd secret set`; and an explicit note of any hand-edits made and why the generator couldn't produce them.
+**Assessment →** the manifest plan: per surface, its correct type, the Postgres co-location decision, network isolation, and the secret NAMES to `lwd secret set`, plus a topology recommendation (small vs. split) tied to replica intent. **Implementation →** the `deploy/*.lwd.toml` manifests (one per surface) via `forge generate lwd` (with `--dry-run`), and an explicit note of any hand-edits made and why the generator couldn't produce them.
